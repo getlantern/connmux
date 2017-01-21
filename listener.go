@@ -15,6 +15,17 @@ type listener struct {
 	connCh              chan net.Conn
 }
 
+// WrapListener wraps the given listener with support for multiplexing. Only
+// connections that start with the special session start header will be
+// multiplexed, otherwise connections behave as normal.
+//
+// sessionBufferSource - a source of buffers for the session's read loop. A
+// good width for these is 70,000 bytes.
+//
+// streamBufferSource - a source of buffers for each stream. These should be
+// large enough to accomodate slow readers that may need to buffer a lot of
+// data. If a buffer fills before the reader can drain it, the stream will fail
+// with ErrBufferOverflowed.
 func WrapListener(wrapped net.Listener, sessionBufferSource BufferSource, streamBufferSource BufferSource) net.Listener {
 	l := &listener{
 		wrapped:             wrapped,

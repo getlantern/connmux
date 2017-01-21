@@ -1,3 +1,7 @@
+// Package connmux provides the ability to multiplex streams over as single
+// underlying net.Conn. Streams implement the net.Conn interface so to the user
+// they look and work just like regular net.Conns, including support for read
+// and write deadlines.
 package connmux
 
 import (
@@ -16,7 +20,7 @@ const (
 
 var (
 	ErrBufferFull       = errors.New("buffer full")
-	ErrBufferOverflowed = errors.New("buffer overflowed, connection no longer readable")
+	ErrBufferOverflowed = errors.New("buffer overflowed, stream no longer readable")
 	ErrTimeout          = &timeoutError{}
 	ErrConnectionClosed = errors.New("connection closed") // TODO: make a net.Error?
 	ErrListenerClosed   = errors.New("listener closed")   // TODO: make a net.Error?

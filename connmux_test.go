@@ -20,7 +20,7 @@ var (
 )
 
 func TestConnNoMultiplex(t *testing.T) {
-	doTestConn(t, func(network, addr string) func() (net.Conn, error) {
+	doTestConnBasicFlow(t, func(network, addr string) func() (net.Conn, error) {
 		return func() (net.Conn, error) {
 			return net.Dial(network, addr)
 		}
@@ -28,14 +28,14 @@ func TestConnNoMultiplex(t *testing.T) {
 }
 
 func TestConnMultiplex(t *testing.T) {
-	doTestConn(t, func(network, addr string) func() (net.Conn, error) {
+	doTestConnBasicFlow(t, func(network, addr string) func() (net.Conn, error) {
 		return Dialer(sessionBufferSource, streamBufferSource, func() (net.Conn, error) {
 			return net.Dial(network, addr)
 		})
 	})
 }
 
-func doTestConn(t *testing.T, dialer func(network, addr string) func() (net.Conn, error)) {
+func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() (net.Conn, error)) {
 	wrapped, err := net.Listen("tcp", "localhost:0")
 	if !assert.NoError(t, err) {
 		return
