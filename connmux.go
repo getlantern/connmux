@@ -1,4 +1,4 @@
-// Package connmux provides the ability to multiplex streams over as single
+// Package connmux provides the ability to multiplex streams over a single
 // underlying net.Conn. Streams implement the net.Conn interface so to the user
 // they look and work just like regular net.Conns, including support for read
 // and write deadlines.
