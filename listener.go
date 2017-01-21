@@ -1,24 +1,25 @@
 package connmux
 
 import (
-	"fmt"
 	"io"
 	"net"
+
+	"github.com/getlantern/framed"
 )
 
 type listener struct {
 	wrapped             net.Listener
 	sessionBufferSource BufferSource
-	readBufferSource    BufferSource
+	streamBufferSource  BufferSource
 	errCh               chan error
 	connCh              chan net.Conn
 }
 
-func WrapListener(wrapped net.Listener, sessionBufferSource BufferSource, readBufferSource BufferSource) net.Listener {
+func WrapListener(wrapped net.Listener, sessionBufferSource BufferSource, streamBufferSource BufferSource) net.Listener {
 	l := &listener{
 		wrapped:             wrapped,
 		sessionBufferSource: sessionBufferSource,
-		readBufferSource:    readBufferSource,
+		streamBufferSource:  streamBufferSource,
 		connCh:              make(chan net.Conn),
 		errCh:               make(chan error),
 	}
@@ -53,11 +54,11 @@ func (l *listener) process() {
 			l.errCh <- err
 			return
 		}
-		go l.newConn(conn)
+		go l.onConn(conn)
 	}
 }
 
-func (l *listener) newConn(conn net.Conn) {
+func (l *listener) onConn(conn net.Conn) {
 	b := make([]byte, sessionStartLength)
 	// Try to read start sequence
 	n, err := io.ReadFull(conn, b)
@@ -65,16 +66,16 @@ func (l *listener) newConn(conn net.Conn) {
 		l.errCh <- err
 		return
 	}
-	fmt.Printf("Session start? %v\n", string(b))
 	if n == sessionStartLength && string(b) == sessionStart {
-		fmt.Println("It's multiplexed")
 		// It's a multiplexed connection
 		s := &session{
 			Conn:                conn,
+			framed:              framed.NewReader(conn),
 			sessionBufferSource: l.sessionBufferSource,
-			readBufferSource:    l.readBufferSource,
+			streamBufferSource:  l.streamBufferSource,
 			sessionBuffer:       l.sessionBufferSource.Get(),
-			vconns:              make(map[uint64]*vconn),
+			connCh:              l.connCh,
+			streams:             make(map[uint32]*stream),
 		}
 		go s.readLoop()
 		return
@@ -107,67 +108,4 @@ func (prc *preReadConn) Read(b []byte) (int, error) {
 		n += n2
 	}
 	return n, err
-}
-
-type session struct {
-	net.Conn
-	sessionBufferSource BufferSource
-	readBufferSource    BufferSource
-	sessionBuffer       []byte
-	vconns              map[uint64]*vconn
-}
-
-func (s *session) readLoop() {
-	b := s.sessionBuffer
-	defer s.sessionBufferSource.Put(b)
-
-	for {
-		fmt.Println("Read looping")
-		// TODO: read deadline?
-		n, err := io.ReadAtLeast(s, b, 8)
-		if err != nil {
-			if err == io.EOF {
-				for _, vc := range s.vconns {
-					vc.readBuffer.Close()
-				}
-			} else {
-				// TODO: propagate read error
-			}
-			s.Conn.Close()
-			return
-		}
-		fmt.Printf("Read %v\n", string(b[:n]))
-		id := b[:8]
-		isClose := false
-		if id[0] == connClose {
-			// Closing existing connection
-			isClose = true
-			id[0] = 0
-		}
-
-		_id := binaryEncoding.Uint64(id)
-		vc := s.vconns[_id]
-		if isClose {
-			s.vconns[_id].readBuffer.Close()
-			delete(s.vconns, _id)
-			continue
-		}
-
-		if vc == nil {
-			vc = &vconn{
-				Conn:         s.Conn,
-				id:           id,
-				bufferSource: s.readBufferSource,
-				readBuffer:   newBoundedBuffer(s.readBufferSource.Get()),
-			}
-			s.vconns[_id] = vc
-		}
-
-		bufferErr := vc.readBuffer.Write(b[2:n])
-		if bufferErr != nil {
-			vc.markOverflowed()
-			delete(s.vconns, _id)
-		}
-		fmt.Println("Wrote to read buffer")
-	}
 }

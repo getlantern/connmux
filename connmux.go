@@ -10,6 +10,8 @@ const (
 	sessionStart = "\000cmstart\000"
 
 	connClose = 1
+
+	idlen = 4
 )
 
 var (

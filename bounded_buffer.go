@@ -91,7 +91,10 @@ func (bb *boundedBuffer) Read(b []byte, deadline time.Time) (int, error) {
 
 	if deadline.IsZero() {
 		// Wait indefinitely
-		<-waitForData
+		hasData := <-waitForData
+		if !hasData {
+			return 0, io.EOF
+		}
 		bb.mx.Lock()
 		n, err := bb.doRead(b)
 		bb.mx.Unlock()
@@ -144,6 +147,12 @@ func (bb *boundedBuffer) Close() {
 	bb.mx.Lock()
 	bb.closed = true
 	bb.mx.Unlock()
+	select {
+	case bb.waitForData <- false:
+		// Signaled we're done
+	default:
+		// No one waiting
+	}
 }
 
 func (bb *boundedBuffer) Raw() []byte {

@@ -1,7 +1,6 @@
 package connmux
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -16,8 +15,8 @@ const (
 )
 
 var (
-	sessionBufferSource = bpool.NewBytePool(100, 32768)
-	readBufferSource    = bpool.NewBytePool(100, 1024768)
+	sessionBufferSource = bpool.NewBytePool(100, 70000)
+	streamBufferSource  = bpool.NewBytePool(100, 1024768)
 )
 
 func TestConnNoMultiplex(t *testing.T) {
@@ -30,7 +29,7 @@ func TestConnNoMultiplex(t *testing.T) {
 
 func TestConnMultiplex(t *testing.T) {
 	doTestConn(t, func(network, addr string) func() (net.Conn, error) {
-		return Dialer(readBufferSource, func() (net.Conn, error) {
+		return Dialer(sessionBufferSource, streamBufferSource, func() (net.Conn, error) {
 			return net.Dial(network, addr)
 		})
 	})
@@ -42,25 +41,36 @@ func doTestConn(t *testing.T, dialer func(network, addr string) func() (net.Conn
 		return
 	}
 
-	l := WrapListener(wrapped, sessionBufferSource, readBufferSource)
+	l := WrapListener(wrapped, sessionBufferSource, streamBufferSource)
 	defer l.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		conn, acceptErr := l.Accept()
 		if !assert.NoError(t, acceptErr) {
 			return
 		}
-		fmt.Println("Accepted conn")
 		defer conn.Close()
-		_, copyErr := io.Copy(conn, conn)
-		if copyErr != nil {
-			fmt.Println(copyErr)
-			return
+
+		b := make([]byte, 4)
+		for {
+			n, readErr := conn.Read(b)
+			if readErr != io.EOF && !assert.NoError(t, readErr) {
+				return
+			}
+			n2, writeErr := conn.Write(b[:n])
+			if !assert.NoError(t, writeErr) {
+				return
+			}
+			if !assert.Equal(t, n, n2) {
+				return
+			}
+			if readErr == io.EOF {
+				return
+			}
 		}
-		fmt.Println("Done copying")
-		wg.Done()
 	}()
 
 	dial := dialer("tcp", l.Addr().String())
@@ -78,7 +88,6 @@ func doTestConn(t *testing.T, dialer func(network, addr string) func() (net.Conn
 		return
 	}
 
-	fmt.Println("Got here")
 	b := make([]byte, len(testdata))
 	n, err = io.ReadFull(conn, b)
 	if !assert.NoError(t, err) {
@@ -90,4 +99,5 @@ func doTestConn(t *testing.T, dialer func(network, addr string) func() (net.Conn
 
 	assert.Equal(t, testdata, string(b))
 	conn.Close()
+	wg.Wait()
 }
