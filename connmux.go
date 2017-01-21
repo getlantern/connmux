@@ -9,9 +9,8 @@ import (
 )
 
 var (
-	ErrBufferOverflow = errors.New("buffer overflow")
-	ErrBufferBlocked  = errors.New("buffer blocked")
-	ErrTimeout        = &timeoutError{}
+	ErrBufferFull = errors.New("buffer full")
+	ErrTimeout    = &timeoutError{}
 
 	binaryEncoding = binary.BigEndian
 )
@@ -25,7 +24,7 @@ func (e *timeoutError) Temporary() bool { return true }
 type Buffer interface {
 	Write(b []byte) error
 
-	Read(deadline time.Time) ([]byte, error)
+	Read(b []byte, deadline time.Time) (int, error)
 }
 
 type vconn struct {

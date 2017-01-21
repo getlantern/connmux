@@ -5,69 +5,124 @@ import (
 	"time"
 )
 
-const (
-	assumedAvgPacketSize = 100
-)
-
 var (
 	defaultDeadline = time.Now().Add(100000 * time.Hour)
 )
 
 type boundedBuffer struct {
-	limit int
-	size  int
-	data  chan []byte
-	mx    sync.Mutex
+	limit       int
+	readOffset  int
+	writeOffset int
+	unread      int
+	data        []byte
+	waitForData chan bool
+	mx          sync.Mutex
 }
 
 func newBoundedBuffer(limit int) Buffer {
 	return &boundedBuffer{
 		limit: limit,
-		data:  make(chan []byte, limit/assumedAvgPacketSize),
+		data:  make([]byte, limit),
 	}
 }
 
 func (bb *boundedBuffer) Write(b []byte) error {
 	n := len(b)
 	bb.mx.Lock()
-	bb.size += n
-	if bb.size > bb.limit {
+	unread := bb.unread + n
+	if unread > bb.limit {
 		bb.mx.Unlock()
-		return ErrBufferOverflow
+		return ErrBufferFull
 	}
+	bb.unread = unread
+	available := bb.limit - bb.writeOffset
+	if available == 0 {
+		copy(bb.data, b)
+		bb.writeOffset = n
+	} else if available < n {
+		copy(bb.data[bb.writeOffset:], b[:available])
+		copy(bb.data, b[available:])
+		bb.writeOffset = n - available
+	} else {
+		copy(bb.data[bb.writeOffset:], b)
+		bb.writeOffset += n
+	}
+	waitForData := bb.waitForData
+	bb.mx.Unlock()
+	if waitForData != nil {
+		select {
+		case waitForData <- true:
+			// ok
+		default:
+			// already notified
+		}
+	}
+	return nil
+}
+
+func (bb *boundedBuffer) Read(b []byte, deadline time.Time) (int, error) {
+	bb.mx.Lock()
+	if bb.unread > 0 {
+		n, err := bb.doRead(b)
+		bb.mx.Unlock()
+		return n, err
+	}
+
+	now := time.Now()
+	if deadline.Before(now) {
+		// Don't bother waiting
+		bb.mx.Unlock()
+		return 0, ErrTimeout
+	}
+
+	// wait for data
+	waitForData := make(chan bool)
+	bb.waitForData = waitForData
+	bb.mx.Unlock()
+
+	if deadline.IsZero() {
+		// Wait indefinitely
+		<-waitForData
+		bb.mx.Lock()
+		n, err := bb.doRead(b)
+		bb.mx.Unlock()
+		return n, err
+	}
+
+	// Wait with timeout
+	timer := time.NewTimer(deadline.Sub(now))
 	select {
-	case bb.data <- b:
+	case <-waitForData:
+		timer.Stop()
+		bb.mx.Lock()
+		n, err := bb.doRead(b)
+		bb.waitForData = nil
 		bb.mx.Unlock()
-		return nil
-	default:
+		return n, err
+	case <-timer.C:
+		timer.Stop()
+		bb.mx.Lock()
+		bb.waitForData = nil
 		bb.mx.Unlock()
-		return ErrBufferBlocked
+		return 0, ErrTimeout
 	}
 }
 
-func (bb *boundedBuffer) Read(deadline time.Time) ([]byte, error) {
-	var b []byte
-	if deadline.IsZero() {
-		b = <-bb.data
-	} else {
-		now := time.Now()
-		if deadline.Before(now) {
-			return nil, ErrTimeout
-		}
-
-		timer := time.NewTimer(deadline.Sub(now))
-		select {
-		case b = <-bb.data:
-			timer.Stop()
-		case <-timer.C:
-			timer.Stop()
-			return nil, ErrTimeout
-		}
-	}
-
+func (bb *boundedBuffer) doRead(b []byte) (int, error) {
 	n := len(b)
-	bb.mx.Lock()
-	bb.size -= n
-	bb.mx.Unlock()
-	return b, nil
+	if bb.unread < n {
+		n = bb.unread
+		b = b[:n]
+	}
+	wrapAfter := bb.limit - bb.readOffset
+	if wrapAfter >= n {
+		copy(b, bb.data[bb.readOffset:])
+		bb.readOffset += n
+	} else {
+		copy(b[:wrapAfter], bb.data[bb.readOffset:])
+		copy(b[wrapAfter:], bb.data[0:])
+		bb.readOffset += n - wrapAfter
+	}
+	bb.unread -= n
+	return n, nil
 }
