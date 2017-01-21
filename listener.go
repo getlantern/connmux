@@ -17,7 +17,9 @@ type listener struct {
 
 // WrapListener wraps the given listener with support for multiplexing. Only
 // connections that start with the special session start header will be
-// multiplexed, otherwise connections behave as normal.
+// multiplexed, otherwise connections behave as normal. This means that a single
+// listener can be used to serve clients that do multiplex and clients that
+// don't.
 //
 // sessionBufferSource - a source of buffers for the session's read loop. A
 // good width for these is 70,000 bytes.
