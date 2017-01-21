@@ -32,8 +32,17 @@ func TestBoundedBuffer(t *testing.T) {
 		}
 	}()
 
+	// Read with past timeout
+	n, err := buf.Read(b, time.Now().Add(-10*time.Hour))
+	if !assert.Error(t, err) {
+		return
+	}
+	assert.True(t, err.(net.Error).Timeout())
+	assert.Equal(t, "i/o timeout", err.Error())
+	assert.Equal(t, 0, n)
+
 	// Read with short timeout
-	n, err := buf.Read(b, time.Now().Add(10*time.Millisecond))
+	n, err = buf.Read(b, time.Now().Add(10*time.Millisecond))
 	if !assert.Error(t, err) {
 		return
 	}
