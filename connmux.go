@@ -47,7 +47,12 @@ type Buffer interface {
 	Raw() []byte
 }
 
+// BufferSource is a source for byte buffers (e.g. a buffer pool).
 type BufferSource interface {
+	// Get gets a buffer.
 	Get() []byte
+
+	// Put returns a buffer back to its source, indicating that it is safe to
+	// reuse.
 	Put([]byte)
 }
