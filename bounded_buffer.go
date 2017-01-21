@@ -1,6 +1,7 @@
 package connmux
 
 import (
+	"io"
 	"sync"
 	"time"
 )
@@ -16,6 +17,7 @@ type boundedBuffer struct {
 	unread      int
 	data        []byte
 	waitForData chan bool
+	closed      bool
 	mx          sync.Mutex
 }
 
@@ -68,6 +70,11 @@ func (bb *boundedBuffer) Read(b []byte, deadline time.Time) (int, error) {
 		n, err := bb.doRead(b)
 		bb.mx.Unlock()
 		return n, err
+	}
+
+	if bb.closed {
+		bb.mx.Unlock()
+		return 0, io.EOF
 	}
 
 	now := time.Now()
@@ -126,5 +133,15 @@ func (bb *boundedBuffer) doRead(b []byte) (int, error) {
 		bb.readOffset += n - wrapAfter
 	}
 	bb.unread -= n
-	return n, nil
+	var err error
+	if bb.unread == 0 && bb.closed {
+		err = io.EOF
+	}
+	return n, err
+}
+
+func (bb *boundedBuffer) Close() {
+	bb.mx.Lock()
+	bb.closed = true
+	bb.mx.Unlock()
 }

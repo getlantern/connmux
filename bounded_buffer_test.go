@@ -2,6 +2,7 @@ package connmux
 
 import (
 	"github.com/stretchr/testify/assert"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -77,9 +78,12 @@ func TestBoundedBuffer(t *testing.T) {
 		return
 	}
 
+	// Close to make sure we get an EOF
+	buf.Close()
+
 	// Read one last time
 	n, err = buf.Read(b, time.Time{})
-	if !assert.NoError(t, err) {
+	if !assert.Equal(t, err, io.EOF) {
 		return
 	}
 	assert.Equal(t, text, string(b[:n]))
