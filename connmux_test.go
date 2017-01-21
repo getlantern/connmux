@@ -1,11 +1,13 @@
 package connmux
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync"
 	"testing"
 
+	"github.com/oxtoacart/bpool"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,13 +15,34 @@ const (
 	testdata = "Hello Dear World"
 )
 
+var (
+	sessionBufferSource = bpool.NewBytePool(100, 32768)
+	readBufferSource    = bpool.NewBytePool(100, 1024768)
+)
+
 func TestConnNoMultiplex(t *testing.T) {
+	doTestConn(t, func(network, addr string) func() (net.Conn, error) {
+		return func() (net.Conn, error) {
+			return net.Dial(network, addr)
+		}
+	})
+}
+
+func TestConnMultiplex(t *testing.T) {
+	doTestConn(t, func(network, addr string) func() (net.Conn, error) {
+		return Dialer(readBufferSource, func() (net.Conn, error) {
+			return net.Dial(network, addr)
+		})
+	})
+}
+
+func doTestConn(t *testing.T, dialer func(network, addr string) func() (net.Conn, error)) {
 	wrapped, err := net.Listen("tcp", "localhost:0")
 	if !assert.NoError(t, err) {
 		return
 	}
 
-	l := WrapListener(wrapped)
+	l := WrapListener(wrapped, sessionBufferSource, readBufferSource)
 	defer l.Close()
 
 	var wg sync.WaitGroup
@@ -29,15 +52,19 @@ func TestConnNoMultiplex(t *testing.T) {
 		if !assert.NoError(t, acceptErr) {
 			return
 		}
+		fmt.Println("Accepted conn")
 		defer conn.Close()
-		n, copyErr := io.Copy(conn, conn)
-		if assert.NoError(t, copyErr) {
-			assert.Equal(t, len(testdata), n)
+		_, copyErr := io.Copy(conn, conn)
+		if copyErr != nil {
+			fmt.Println(copyErr)
+			return
 		}
+		fmt.Println("Done copying")
 		wg.Done()
 	}()
 
-	conn, err := net.Dial("tcp", l.Addr().String())
+	dial := dialer("tcp", l.Addr().String())
+	conn, err := dial()
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -51,6 +78,7 @@ func TestConnNoMultiplex(t *testing.T) {
 		return
 	}
 
+	fmt.Println("Got here")
 	b := make([]byte, len(testdata))
 	n, err = io.ReadFull(conn, b)
 	if !assert.NoError(t, err) {

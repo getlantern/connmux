@@ -51,9 +51,7 @@ func TestBoundedBuffer(t *testing.T) {
 	assert.Equal(t, "i/o timeout", err.Error())
 	assert.Equal(t, 0, n)
 
-	time.Sleep(50 * time.Millisecond)
-
-	// Reading again should work, twice
+	// Reading again with no timeout, should block until it works, twice
 	for i := 0; i < 2; i++ {
 		n, err = buf.Read(b, time.Time{})
 		if !assert.NoError(t, err) {

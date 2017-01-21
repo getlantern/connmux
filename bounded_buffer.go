@@ -78,7 +78,7 @@ func (bb *boundedBuffer) Read(b []byte, deadline time.Time) (int, error) {
 	}
 
 	now := time.Now()
-	if deadline.Before(now) {
+	if !deadline.IsZero() && deadline.Before(now) {
 		// Don't bother waiting
 		bb.mx.Unlock()
 		return 0, ErrTimeout
@@ -144,4 +144,8 @@ func (bb *boundedBuffer) Close() {
 	bb.mx.Lock()
 	bb.closed = true
 	bb.mx.Unlock()
+}
+
+func (bb *boundedBuffer) Raw() []byte {
+	return bb.data
 }

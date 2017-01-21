@@ -7,19 +7,22 @@ import (
 )
 
 const (
-	start = "\000cmstrt\000"
-	stop  = "\000cmstop\000"
+	sessionStart = "\000cmstart\000"
+
+	connClose = 1
 )
 
 var (
 	ErrBufferFull       = errors.New("buffer full")
 	ErrBufferOverflowed = errors.New("buffer overflowed, connection no longer readable")
 	ErrTimeout          = &timeoutError{}
-	ErrListenerClosed   = errors.New("listener closed")
+	ErrConnectionClosed = errors.New("connection closed") // TODO: make a net.Error?
+	ErrListenerClosed   = errors.New("listener closed")   // TODO: make a net.Error?
 
 	binaryEncoding = binary.BigEndian
 
-	controlLength = len(start)
+	sessionStartBytes  = []byte(sessionStart)
+	sessionStartLength = len(sessionStartBytes)
 )
 
 type timeoutError struct{}
@@ -34,4 +37,11 @@ type Buffer interface {
 	Read(b []byte, deadline time.Time) (int, error)
 
 	Close()
+
+	Raw() []byte
+}
+
+type BufferSource interface {
+	Get() []byte
+	Put([]byte)
 }
