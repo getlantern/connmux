@@ -19,10 +19,12 @@ type boundedBuffer struct {
 	mx          sync.Mutex
 }
 
-func newBoundedBuffer(limit int) Buffer {
+func newBoundedBuffer(data []byte) Buffer {
+	limit := cap(data)
+	data = data[:limit]
 	return &boundedBuffer{
 		limit: limit,
-		data:  make([]byte, limit),
+		data:  data,
 	}
 }
 
