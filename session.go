@@ -36,7 +36,7 @@ func (s *session) readLoop() {
 			s.Conn.Close()
 			return
 		}
-		id := b[:idlen]
+		id := b[:idLen]
 		isClose := false
 		if id[0] == connClose {
 			// Closing existing connection
@@ -56,8 +56,8 @@ func (s *session) readLoop() {
 
 		c := s.getOrCreateStream(_id)
 
-		if n > idlen {
-			bufferErr := c.readBuffer.Write(b[idlen:n])
+		if n > idLen {
+			bufferErr := c.readBuffer.Write(b[idLen:n])
 			if bufferErr != nil {
 				c.markOverflowed()
 				delete(s.streams, _id)
@@ -73,7 +73,7 @@ func (s *session) getOrCreateStream(id uint32) *stream {
 		s.mx.Unlock()
 		return c
 	}
-	_id := make([]byte, idlen)
+	_id := make([]byte, idLen)
 	binaryEncoding.PutUint32(_id, id)
 	c = &stream{
 		Conn:         s.Conn,

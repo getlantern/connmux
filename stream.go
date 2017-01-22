@@ -37,7 +37,7 @@ func (c *stream) Write(b []byte) (int, error) {
 		return 0, fmt.Errorf("Unable to set write deadline: %v", err)
 	}
 	n, err := c.framed.WritePieces(c.id, b)
-	return n - idlen, err
+	return n - idLen, err
 }
 
 func (c *stream) Close() error {

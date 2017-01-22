@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-var (
-	defaultDeadline = time.Now().Add(100000 * time.Hour)
-)
-
 type boundedBuffer struct {
 	limit       int
 	readOffset  int
