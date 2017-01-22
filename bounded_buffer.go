@@ -133,7 +133,7 @@ func (bb *boundedBuffer) doRead(b []byte) (int, error) {
 	} else {
 		copy(b[:wrapAfter], bb.data[bb.readOffset:])
 		copy(b[wrapAfter:], bb.data[0:])
-		bb.readOffset += n - wrapAfter
+		bb.readOffset = n - wrapAfter
 	}
 	bb.unread -= n
 	var err error
