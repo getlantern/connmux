@@ -4,15 +4,15 @@ import (
 	"io"
 	"net"
 
-	"github.com/getlantern/framed"
+	"github.com/oxtoacart/bpool"
 )
 
 type listener struct {
-	wrapped             net.Listener
-	sessionBufferSource BufferSource
-	streamBufferSource  BufferSource
-	errCh               chan error
-	connCh              chan net.Conn
+	wrapped    net.Listener
+	frameDepth int
+	pool       BufferPool
+	errCh      chan error
+	connCh     chan net.Conn
 }
 
 // WrapListener wraps the given listener with support for multiplexing. Only
@@ -28,13 +28,13 @@ type listener struct {
 // large enough to accomodate slow readers that may need to buffer a lot of
 // data. If a buffer fills before the reader can drain it, the stream will fail
 // with ErrBufferOverflowed.
-func WrapListener(wrapped net.Listener, sessionBufferSource BufferSource, streamBufferSource BufferSource) net.Listener {
+func WrapListener(wrapped net.Listener, frameDepth int, poolSize int) net.Listener {
 	l := &listener{
-		wrapped:             wrapped,
-		sessionBufferSource: sessionBufferSource,
-		streamBufferSource:  streamBufferSource,
-		connCh:              make(chan net.Conn),
-		errCh:               make(chan error),
+		wrapped:    wrapped,
+		frameDepth: frameDepth,
+		pool:       bpool.NewBytePool(poolSize, maxFrameLen),
+		connCh:     make(chan net.Conn),
+		errCh:      make(chan error),
 	}
 	go l.process()
 	return l
@@ -82,15 +82,15 @@ func (l *listener) onConn(conn net.Conn) {
 	if n == sessionStartLength && string(b) == sessionStart {
 		// It's a multiplexed connection
 		s := &session{
-			Conn:                conn,
-			framed:              framed.NewReader(conn),
-			sessionBufferSource: l.sessionBufferSource,
-			streamBufferSource:  l.streamBufferSource,
-			sessionBuffer:       l.sessionBufferSource.Get(),
-			connCh:              l.connCh,
-			streams:             make(map[uint32]*stream),
+			Conn:       conn,
+			frameDepth: l.frameDepth,
+			pool:       l.pool,
+			out:        make(chan []byte),
+			streams:    make(map[uint32]*stream),
+			connCh:     l.connCh,
 		}
 		go s.readLoop()
+		go s.writeLoop()
 		return
 	}
 

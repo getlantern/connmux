@@ -1,6 +1,7 @@
 package connmux
 
 import (
+	"io"
 	"time"
 )
 
@@ -8,23 +9,28 @@ var (
 	defaultDeadline = time.Now().Add(100000 * time.Hour)
 )
 
-type receivebuffer struct {
+type receiveBuffer struct {
+	ackFrame []byte
 	in       chan []byte
-	ack      chan bool
+	ack      chan []byte
 	pool     BufferPool
 	poolable []byte
 	current  []byte
 }
 
-func newReceiveBuffer(ack chan bool, pool BufferPool, depth int) *receivebuffer {
-	return &receivebuffer{
-		in:   make(chan []byte, depth),
-		ack:  ack,
-		pool: pool,
+func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth int) *receiveBuffer {
+	ackFrame := make([]byte, len(streamID))
+	copy(ackFrame, streamID)
+	setFrameType(ackFrame, frameTypeACK)
+	return &receiveBuffer{
+		ackFrame: ackFrame,
+		in:       make(chan []byte, depth),
+		ack:      ack,
+		pool:     pool,
 	}
 }
 
-func (buf *receivebuffer) read(b []byte, deadline time.Time) (totalN int, err error) {
+func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err error) {
 	for {
 		n := copy(b, buf.current)
 		buf.current = buf.current[n:]
@@ -37,8 +43,11 @@ func (buf *receivebuffer) read(b []byte, deadline time.Time) (totalN int, err er
 		// b can hold more than we had in the current slice, try to read more if
 		// immediately available.
 		select {
-		case frame := <-buf.in:
+		case frame, open := <-buf.in:
 			// Read next frame, continue loop
+			if !open {
+				return totalN, io.EOF
+			}
 			buf.onFrame(frame)
 			continue
 		default:
@@ -56,29 +65,36 @@ func (buf *receivebuffer) read(b []byte, deadline time.Time) (totalN int, err er
 				// Deadline already past, don't bother doing anything
 				return
 			}
-			timer := time.NewTimer(now.Sub(deadline))
+			timer := time.NewTimer(deadline.Sub(now))
 			select {
 			case <-timer.C:
 				// Nothing read within deadline
 				err = ErrTimeout
 				timer.Stop()
 				return
-			case frame := <-buf.in:
+			case frame, open := <-buf.in:
 				// Read next frame, continue loop
-				buf.onFrame(frame)
 				timer.Stop()
+				if !open {
+					return totalN, io.EOF
+				}
+				buf.onFrame(frame)
 				continue
 			}
 		}
 	}
 }
 
-func (buf *receivebuffer) onFrame(frame []byte) {
+func (buf *receiveBuffer) onFrame(frame []byte) {
 	if buf.poolable != nil {
 		// Return previous frame to pool
-		buf.pool.Put(buf.poolable[:cap(buf.poolable)])
+		buf.pool.Put(buf.poolable[:maxFrameLen])
 	}
 	buf.poolable = frame
 	buf.current = frame[frameHeaderLen:]
-	buf.ack <- true
+	buf.ack <- buf.ackFrame
+}
+
+func (buf *receiveBuffer) close() {
+	close(buf.in)
 }

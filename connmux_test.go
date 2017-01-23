@@ -6,17 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/oxtoacart/bpool"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
 	testdata = "Hello Dear World"
-)
-
-var (
-	sessionBufferSource = bpool.NewBytePool(100, 256000)
-	streamBufferSource  = bpool.NewBytePool(100, 10247680)
 )
 
 func TestConnNoMultiplex(t *testing.T) {
@@ -29,7 +23,7 @@ func TestConnNoMultiplex(t *testing.T) {
 
 func TestConnMultiplex(t *testing.T) {
 	doTestConnBasicFlow(t, func(network, addr string) func() (net.Conn, error) {
-		return Dialer(sessionBufferSource, streamBufferSource, func() (net.Conn, error) {
+		return Dialer(10, 100, func() (net.Conn, error) {
 			return net.Dial(network, addr)
 		})
 	})
@@ -41,7 +35,7 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 		return
 	}
 
-	l := WrapListener(wrapped, sessionBufferSource, streamBufferSource)
+	l := WrapListener(wrapped, 10, 100)
 	defer l.Close()
 
 	var wg sync.WaitGroup
@@ -54,14 +48,14 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 		}
 		defer conn.Close()
 
-		b := make([]byte, 4)
 		for {
+			b := make([]byte, 4, maxFrameLen)
 			n, readErr := conn.Read(b)
-			if readErr != io.EOF && !assert.NoError(t, readErr) {
+			if readErr != io.EOF && !assert.NoError(t, readErr, "Error reading for echo") {
 				return
 			}
 			n2, writeErr := conn.Write(b[:n])
-			if !assert.NoError(t, writeErr) {
+			if !assert.NoError(t, writeErr, "Error writing echo") {
 				return
 			}
 			if !assert.Equal(t, n, n2) {
@@ -108,9 +102,9 @@ func BenchmarkConnMux(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	lst := WrapListener(_lst, sessionBufferSource, streamBufferSource)
+	lst := WrapListener(_lst, 10, 100)
 
-	conn, err := Dialer(sessionBufferSource, streamBufferSource, func() (net.Conn, error) {
+	conn, err := Dialer(10, 100, func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})()
 	if err != nil {
@@ -135,7 +129,7 @@ func BenchmarkTCP(b *testing.B) {
 }
 
 func doBench(b *testing.B, l net.Listener, wr io.Writer) {
-	size := 128 * 1024
+	size := maxDataLen
 	buf := make([]byte, size)
 	buf2 := make([]byte, size)
 	b.SetBytes(int64(size))

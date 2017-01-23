@@ -10,11 +10,14 @@ import (
 )
 
 func TestReceiveBuffer(t *testing.T) {
+	id := make([]byte, idLen)
+	binaryEncoding.PutUint32(id, 27)
+
 	depth := 5
 
 	pool := &testpool{}
-	ack := make(chan bool, 1000)
-	buf := newReceiveBuffer(ack, pool, depth)
+	ack := make(chan []byte, 1000)
+	buf := newReceiveBuffer(id, ack, pool, depth)
 	for i := 0; i < 2; i++ {
 		b := pool.Get()
 		b[frameHeaderLen] = fmt.Sprint(i)[0]
@@ -34,8 +37,15 @@ func TestReceiveBuffer(t *testing.T) {
 ackloop:
 	for {
 		select {
-		case <-ack:
-			totalAcks += 1
+		case a := <-ack:
+			if assert.EqualValues(t, frameTypeACK, a[0]) {
+				a2 := make([]byte, idLen)
+				copy(a2, a)
+				a2[0] = 0
+				if assert.EqualValues(t, id, a2) {
+					totalAcks += 1
+				}
+			}
 		default:
 			break ackloop
 		}

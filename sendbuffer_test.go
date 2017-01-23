@@ -10,19 +10,25 @@ import (
 )
 
 func TestSendBuffer(t *testing.T) {
+	id := make([]byte, idLen)
+	binaryEncoding.PutUint32(id, 27)
+
 	depth := 5
+
 	out := make(chan []byte)
-	buf := newSendBuffer(out, depth)
-	defer buf.close()
+	buf := newSendBuffer(id, out, depth)
+	defer buf.close(false)
 
 	var mx sync.RWMutex
 	wrote := ""
 	closed := false
 	go func() {
 		for b := range out {
-			mx.Lock()
-			wrote += string(b)
-			mx.Unlock()
+			if assert.EqualValues(t, id, b[1:]) {
+				mx.Lock()
+				wrote += string(b[:1])
+				mx.Unlock()
+			}
 		}
 		mx.Lock()
 		closed = true

@@ -20,23 +20,25 @@ package connmux
 import (
 	"encoding/binary"
 	"errors"
-	"time"
 )
 
 const (
 	sessionStart = "\000cmstart\000"
 
-	connClose = 2
-
+	// framing
 	idLen          = 4
-	lenLen         = 4
+	lenLen         = 2
 	frameHeaderLen = idLen + lenLen
-	maxFrameLen    = 2<<16 + frameHeaderLen
+	maxDataLen     = 2 << 15
+	maxFrameLen    = frameHeaderLen + maxDataLen
+
+	// frame types
+	frameTypeData = 0
+	frameTypeACK  = 1
+	frameTypeRST  = 2
 )
 
 var (
-	ErrBufferFull       = errors.New("buffer full")
-	ErrBufferOverflowed = errors.New("buffer overflowed, stream no longer readable")
 	ErrTimeout          = &timeoutError{}
 	ErrConnectionClosed = errors.New("connection closed") // TODO: make a net.Error?
 	ErrListenerClosed   = errors.New("listener closed")   // TODO: make a net.Error?
@@ -53,26 +55,6 @@ func (e *timeoutError) Error() string   { return "i/o timeout" }
 func (e *timeoutError) Timeout() bool   { return true }
 func (e *timeoutError) Temporary() bool { return true }
 
-type Buffer interface {
-	Write(b []byte) error
-
-	Read(b []byte, deadline time.Time) (int, error)
-
-	Close()
-
-	Raw() []byte
-}
-
-// BufferSource is a source for byte buffers (e.g. a buffer pool).
-type BufferSource interface {
-	// Get gets a buffer.
-	Get() []byte
-
-	// Put returns a buffer back to its source, indicating that it is safe to
-	// reuse.
-	Put([]byte)
-}
-
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {
 	// Get gets a buffer.
@@ -81,4 +63,12 @@ type BufferPool interface {
 	// Put returns a buffer back to the pool, indicating that it is safe to
 	// reuse.
 	Put([]byte)
+}
+
+func frameType(b []byte) byte {
+	return b[0]
+}
+
+func setFrameType(b []byte, frameType byte) {
+	b[0] = frameType
 }
