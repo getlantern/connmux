@@ -3,8 +3,6 @@ package connmux
 import (
 	"io"
 	"net"
-
-	"github.com/oxtoacart/bpool"
 )
 
 type listener struct {
@@ -21,18 +19,15 @@ type listener struct {
 // listener can be used to serve clients that do multiplex and clients that
 // don't.
 //
-// sessionBufferSource - a source of buffers for the session's read loop. A
-// good width for these is 70,000 bytes.
+// frameDepth - how many frames to queue, used to bound memory use. Each frame
+// takes about 64KB of memory.
 //
-// streamBufferSource - a source of buffers for each stream. These should be
-// large enough to accomodate slow readers that may need to buffer a lot of
-// data. If a buffer fills before the reader can drain it, the stream will fail
-// with ErrBufferOverflowed.
-func WrapListener(wrapped net.Listener, frameDepth int, poolSize int) net.Listener {
+// pool - BufferPool to use
+func WrapListener(wrapped net.Listener, frameDepth int, pool BufferPool) net.Listener {
 	l := &listener{
 		wrapped:    wrapped,
 		frameDepth: frameDepth,
-		pool:       bpool.NewBytePool(poolSize, maxFrameLen),
+		pool:       pool,
 		connCh:     make(chan net.Conn),
 		errCh:      make(chan error),
 	}

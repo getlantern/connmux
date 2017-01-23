@@ -20,6 +20,8 @@ package connmux
 import (
 	"encoding/binary"
 	"errors"
+
+	"github.com/oxtoacart/bpool"
 )
 
 const (
@@ -57,12 +59,35 @@ func (e *timeoutError) Temporary() bool { return true }
 
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {
-	// Get gets a buffer.
+	// getForFrame gets a complete buffer large enough to hold an entire connmux frame (65,541 bytes)
+	getForFrame() []byte
+
+	// Get gets a truncated buffer sized to hold the data portion of a connmux frame (65,535 bytes)
 	Get() []byte
 
 	// Put returns a buffer back to the pool, indicating that it is safe to
 	// reuse.
 	Put([]byte)
+}
+
+func NewBufferPool(size int) BufferPool {
+	return &bufferPool{bpool.NewBytePool(size, maxFrameLen)}
+}
+
+type bufferPool struct {
+	pool *bpool.BytePool
+}
+
+func (p *bufferPool) getForFrame() []byte {
+	return p.pool.Get()
+}
+
+func (p *bufferPool) Get() []byte {
+	return p.pool.Get()[:maxDataLen]
+}
+
+func (p *bufferPool) Put(b []byte) {
+	p.pool.Put(b)
 }
 
 func frameType(b []byte) byte {

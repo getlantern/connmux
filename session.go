@@ -19,7 +19,7 @@ type session struct {
 
 func (s *session) readLoop() {
 	for {
-		b := s.pool.Get()
+		b := s.pool.getForFrame()
 		// First read id
 		id := b[:idLen]
 		_, err := io.ReadFull(s, id)

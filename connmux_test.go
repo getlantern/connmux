@@ -23,7 +23,7 @@ func TestConnNoMultiplex(t *testing.T) {
 
 func TestConnMultiplex(t *testing.T) {
 	doTestConnBasicFlow(t, func(network, addr string) func() (net.Conn, error) {
-		return Dialer(10, 100, func() (net.Conn, error) {
+		return Dialer(10, NewBufferPool(100), func() (net.Conn, error) {
 			return net.Dial(network, addr)
 		})
 	})
@@ -35,7 +35,8 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 		return
 	}
 
-	l := WrapListener(wrapped, 10, 100)
+	pool := NewBufferPool(100)
+	l := WrapListener(wrapped, 10, pool)
 	defer l.Close()
 
 	var wg sync.WaitGroup
@@ -49,7 +50,7 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 		defer conn.Close()
 
 		for {
-			b := make([]byte, 4, maxFrameLen)
+			b := pool.Get()[:4]
 			n, readErr := conn.Read(b)
 			if readErr != io.EOF && !assert.NoError(t, readErr, "Error reading for echo") {
 				return
@@ -102,9 +103,9 @@ func BenchmarkConnMux(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	lst := WrapListener(_lst, 10, 100)
+	lst := WrapListener(_lst, 10, NewBufferPool(100))
 
-	conn, err := Dialer(10, 100, func() (net.Conn, error) {
+	conn, err := Dialer(10, NewBufferPool(100), func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})()
 	if err != nil {
@@ -129,10 +130,10 @@ func BenchmarkTCP(b *testing.B) {
 }
 
 func doBench(b *testing.B, l net.Listener, wr io.Writer) {
-	size := maxDataLen
-	buf := make([]byte, size)
-	buf2 := make([]byte, size)
-	b.SetBytes(int64(size))
+	pool := NewBufferPool(10)
+	buf := pool.Get()
+	buf2 := pool.getForFrame()
+	b.SetBytes(maxDataLen)
 	b.ResetTimer()
 
 	var wg sync.WaitGroup
@@ -150,7 +151,7 @@ func doBench(b *testing.B, l net.Listener, wr io.Writer) {
 				b.Fatal(err)
 			}
 			count += n
-			if count == size*b.N {
+			if count == maxDataLen*b.N {
 				return
 			}
 		}

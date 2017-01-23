@@ -57,8 +57,12 @@ type testpool struct {
 	totalReturned int64
 }
 
-func (tp *testpool) Get() []byte {
+func (tp *testpool) getForFrame() []byte {
 	return make([]byte, maxFrameLen)
+}
+
+func (tp *testpool) Get() []byte {
+	return make([]byte, maxDataLen, maxFrameLen)
 }
 
 func (tp *testpool) Put(b []byte) {
