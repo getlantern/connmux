@@ -97,7 +97,7 @@ func (s *session) readLoop() {
 		}
 
 		c := s.getOrCreateStream(_id)
-		c.rb.in <- b
+		c.rb.submit(b)
 	}
 }
 

@@ -2,6 +2,7 @@ package connmux
 
 import (
 	"io"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,8 @@ type receiveBuffer struct {
 	pool     BufferPool
 	poolable []byte
 	current  []byte
+	closed   bool
+	mx       sync.RWMutex
 }
 
 func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth int) *receiveBuffer {
@@ -28,6 +31,16 @@ func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth i
 		ack:      ack,
 		pool:     pool,
 	}
+}
+
+func (buf *receiveBuffer) submit(b []byte) {
+	buf.mx.RLock()
+	closed := buf.closed
+	buf.mx.RUnlock()
+	if closed {
+		return
+	}
+	buf.in <- b
 }
 
 func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err error) {
@@ -96,5 +109,20 @@ func (buf *receiveBuffer) onFrame(frame []byte) {
 }
 
 func (buf *receiveBuffer) close() {
-	close(buf.in)
+	buf.mx.Lock()
+	if !buf.closed {
+		buf.closed = true
+	drainLoop:
+		for {
+			select {
+			case <-buf.in:
+				// okay
+			default:
+				// done
+				break drainLoop
+			}
+		}
+		close(buf.in)
+	}
+	buf.mx.Unlock()
 }

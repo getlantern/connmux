@@ -21,7 +21,7 @@ func TestReceiveBuffer(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		b := pool.Get()
 		b[frameHeaderLen] = fmt.Sprint(i)[0]
-		buf.in <- b[:frameHeaderLen+1]
+		buf.submit(b[:frameHeaderLen+1])
 	}
 
 	b := make([]byte, 2)

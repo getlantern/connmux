@@ -1,6 +1,7 @@
 package connmux
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -11,6 +12,8 @@ import (
 
 const (
 	testdata = "Hello Dear World"
+
+	frameDepth = 2
 )
 
 func TestConnNoMultiplex(t *testing.T) {
@@ -97,13 +100,103 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 	wg.Wait()
 }
 
+func TestConcurrency(t *testing.T) {
+	concurrency := 100
+
+	pool := NewBufferPool(concurrency * frameDepth * 3)
+	_lst, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Unable to listen: %v", err)
+	}
+	lst := WrapListener(_lst, frameDepth, pool)
+
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+
+	go func() {
+		for {
+			conn, err := lst.Accept()
+			if err != nil {
+				t.Fatalf("Unable to accept: %v", err)
+			}
+			go func() {
+				echo(t, conn, pool)
+				wg.Done()
+			}()
+		}
+	}()
+
+	dial := Dialer(frameDepth, NewBufferPool(100), func() (net.Conn, error) {
+		return net.Dial("tcp", lst.Addr().String())
+	})
+
+	var conns []net.Conn
+	for i := 0; i < concurrency; i++ {
+		conn, err := dial()
+		if !assert.NoError(t, err) {
+			t.Fatal("Can't dial")
+		}
+		conns = append(conns, conn)
+		go feed(t, conn)
+	}
+
+	for _, conn := range conns {
+		b := make([]byte, 50)
+		totalN := 0
+		for {
+			n, err := conn.Read(b[totalN:])
+			if !assert.NoError(t, err) {
+				t.Fatalf("Unable to read: %v", err)
+			}
+			totalN += n
+			if totalN == 10 {
+				assert.Equal(t, "0123456789", string(b[:totalN]))
+				break
+			}
+		}
+
+	}
+
+	for _, conn := range conns {
+		conn.Close()
+	}
+
+	wg.Wait()
+}
+
+func echo(t *testing.T, conn net.Conn, pool BufferPool) {
+	defer conn.Close()
+	for {
+		b := pool.Get()
+		n, err := conn.Read(b)
+		if err == io.EOF {
+			// Done
+			return
+		}
+		if !assert.NoError(t, err) {
+			t.Fatal("Unable to read for echo")
+		}
+		_, err = conn.Write(b[:n])
+		if !assert.NoError(t, err) {
+			t.Fatal("Unable to echo")
+		}
+	}
+}
+
+func feed(t *testing.T, conn net.Conn) {
+	for i := 0; i < 10; i++ {
+		_, err := conn.Write([]byte(fmt.Sprint(i)))
+		if err != nil {
+			t.Fatal("Unable to feed")
+		}
+	}
+}
+
 func BenchmarkConnMux(b *testing.B) {
 	_lst, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		b.Fatal(err)
 	}
-
-	frameDepth := 2
 	lst := WrapListener(_lst, frameDepth, NewBufferPool(100))
 
 	conn, err := Dialer(frameDepth, NewBufferPool(100), func() (net.Conn, error) {
