@@ -24,6 +24,7 @@ type listener struct {
 //
 // pool - BufferPool to use
 func WrapListener(wrapped net.Listener, frameDepth int, pool BufferPool) net.Listener {
+	// TODO: maybe we should get the frame depth from the opening frame from client?
 	l := &listener{
 		wrapped:    wrapped,
 		frameDepth: frameDepth,

@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/getlantern/golog"
 	"github.com/oxtoacart/bpool"
 )
 
@@ -31,8 +32,8 @@ const (
 	idLen          = 4
 	lenLen         = 2
 	frameHeaderLen = idLen + lenLen
-	maxDataLen     = 8192
-	maxFrameLen    = frameHeaderLen + maxDataLen
+	MaxDataLen     = 8192
+	maxFrameLen    = frameHeaderLen + MaxDataLen
 
 	// frame types
 	frameTypeData = 0
@@ -41,6 +42,8 @@ const (
 )
 
 var (
+	log = golog.LoggerFor("connmux")
+
 	ErrTimeout          = &timeoutError{}
 	ErrConnectionClosed = errors.New("connection closed") // TODO: make a net.Error?
 	ErrListenerClosed   = errors.New("listener closed")   // TODO: make a net.Error?
@@ -83,7 +86,7 @@ func (p *bufferPool) getForFrame() []byte {
 }
 
 func (p *bufferPool) Get() []byte {
-	return p.pool.Get()[:maxDataLen]
+	return p.pool.Get()[:MaxDataLen]
 }
 
 func (p *bufferPool) Put(b []byte) {

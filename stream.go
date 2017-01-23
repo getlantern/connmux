@@ -30,9 +30,12 @@ func (c *stream) Read(b []byte) (int, error) {
 	return c.rb.read(b, readDeadline)
 }
 
-// Warning - b persists past the call to Write, so don't reuse whatever buffer
-// you pass in here.
 func (c *stream) Write(b []byte) (int, error) {
+	// TODO: make sure this splitting works
+	if len(b) > MaxDataLen {
+		return c.writeChunks(b)
+	}
+
 	c.mx.RLock()
 	closed := c.closed
 	writeDeadline := c.writeDeadline
@@ -42,6 +45,11 @@ func (c *stream) Write(b []byte) (int, error) {
 		// anywhere (TODO, might be better way to handle this?)
 		return len(b), nil
 	}
+	// copy buffer since we hang on to it past the call to Write but callers
+	// expect that they can reuse the buffer after Write returns
+	_b := b
+	b = c.pool.getForFrame()[:len(b)]
+	copy(b, _b)
 	if writeDeadline.IsZero() {
 		c.sb.in <- b
 		return len(b), nil
@@ -58,6 +66,25 @@ func (c *stream) Write(b []byte) (int, error) {
 	case <-timer.C:
 		timer.Stop()
 		return 0, ErrTimeout
+	}
+}
+
+// writeChunks breaks the buffer down into units smaller than MaxDataLen in size
+func (c *stream) writeChunks(b []byte) (int, error) {
+	totalN := 0
+	for {
+		toWrite := b
+		last := true
+		if len(b) > MaxDataLen {
+			toWrite = b[:MaxDataLen]
+			b = b[MaxDataLen:]
+			last = false
+		}
+		n, err := c.Write(toWrite)
+		totalN += n
+		if last || err != nil {
+			return totalN, err
+		}
 	}
 }
 

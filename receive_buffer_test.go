@@ -62,7 +62,7 @@ func (tp *testpool) getForFrame() []byte {
 }
 
 func (tp *testpool) Get() []byte {
-	return make([]byte, maxDataLen, maxFrameLen)
+	return make([]byte, MaxDataLen, maxFrameLen)
 }
 
 func (tp *testpool) Put(b []byte) {

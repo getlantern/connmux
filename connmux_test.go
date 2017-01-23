@@ -52,8 +52,8 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 		}
 		defer conn.Close()
 
+		b := make([]byte, 4)
 		for {
-			b := pool.Get()[:4]
 			n, readErr := conn.Read(b)
 			if readErr != io.EOF && !assert.NoError(t, readErr, "Error reading for echo") {
 				return
@@ -166,8 +166,8 @@ func TestConcurrency(t *testing.T) {
 
 func echo(t *testing.T, conn net.Conn, pool BufferPool) {
 	defer conn.Close()
+	b := make([]byte, MaxDataLen)
 	for {
-		b := pool.Get()
 		n, err := conn.Read(b)
 		if err == io.EOF {
 			// Done
@@ -227,7 +227,7 @@ func doBench(b *testing.B, l net.Listener, wr io.Writer) {
 	pool := NewBufferPool(10)
 	buf := pool.Get()
 	buf2 := pool.getForFrame()
-	b.SetBytes(maxDataLen)
+	b.SetBytes(MaxDataLen)
 	b.ResetTimer()
 
 	var wg sync.WaitGroup
@@ -245,7 +245,7 @@ func doBench(b *testing.B, l net.Listener, wr io.Writer) {
 				b.Fatal(err)
 			}
 			count += n
-			if count == maxDataLen*b.N {
+			if count == MaxDataLen*b.N {
 				return
 			}
 		}

@@ -14,7 +14,7 @@ type session struct {
 	out        chan []byte
 	streams    map[uint32]*stream
 	connCh     chan net.Conn
-	mx         sync.Mutex
+	mx         sync.RWMutex
 }
 
 func (s *session) readLoop() {
@@ -25,7 +25,13 @@ func (s *session) readLoop() {
 		_, err := io.ReadFull(s, id)
 		if err != nil {
 			if err == io.EOF {
+				s.mx.RLock()
+				streams := make([]*stream, 0, len(s.streams))
 				for _, c := range s.streams {
+					streams = append(streams, c)
+				}
+				s.mx.RUnlock()
+				for _, c := range streams {
 					c.Close()
 				}
 			} else {
@@ -104,14 +110,15 @@ func (s *session) readLoop() {
 func (s *session) writeLoop() {
 	for frame := range s.out {
 		dataLen := len(frame) - idLen
-		if dataLen > maxDataLen {
-			panic(fmt.Sprintf("Data length of %d exceeds maximum allowed of %d", dataLen, maxDataLen))
+		if dataLen > MaxDataLen {
+			panic(fmt.Sprintf("Data length of %d exceeds maximum allowed of %d", dataLen, MaxDataLen))
 		}
 		id := frame[dataLen:]
 		_, err := s.Write(id)
 		if err != nil {
 			// TODO: handle error gracefully
-			panic(err)
+			log.Error(err)
+			return
 		}
 		if frameType(id) != frameTypeData {
 			// This is a special control message, no data included
@@ -122,17 +129,16 @@ func (s *session) writeLoop() {
 		_, err = s.Write(length)
 		if err != nil {
 			// TODO: handle error gracefully
-			panic(err)
+			log.Error(err)
+			return
 		}
 		_, err = s.Write(frame[:dataLen])
-		if cap(frame) == maxFrameLen {
-			// Special case, client was smart enough to use a compatible size buffer,
-			// store back to pool for future use.
-			s.pool.Put(frame[:maxFrameLen])
-		}
+		// Put frame back in pool
+		s.pool.Put(frame[:maxFrameLen])
 		if err != nil {
 			// TODO: handle error gracefully
-			panic(err)
+			log.Error(err)
+			return
 		}
 	}
 }
