@@ -78,7 +78,7 @@ func (s *session) readLoop() {
 			return
 		}
 
-		_dataLength := binaryEncoding.Uint16(dataLength)
+		_dataLength := int(binaryEncoding.Uint16(dataLength))
 
 		// Read frame
 		b = b[:frameHeaderLen+_dataLength]
