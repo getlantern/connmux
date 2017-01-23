@@ -103,9 +103,10 @@ func BenchmarkConnMux(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	lst := WrapListener(_lst, 10, NewBufferPool(100))
+	frameDepth := 2
+	lst := WrapListener(_lst, frameDepth, NewBufferPool(100))
 
-	conn, err := Dialer(10, NewBufferPool(100), func() (net.Conn, error) {
+	conn, err := Dialer(frameDepth, NewBufferPool(100), func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})()
 	if err != nil {

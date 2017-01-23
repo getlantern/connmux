@@ -31,7 +31,7 @@ const (
 	idLen          = 4
 	lenLen         = 2
 	frameHeaderLen = idLen + lenLen
-	maxDataLen     = 2<<15 - 1
+	maxDataLen     = 8192
 	maxFrameLen    = frameHeaderLen + maxDataLen
 
 	// frame types
