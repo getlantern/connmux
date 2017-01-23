@@ -9,7 +9,7 @@ import (
 
 type session struct {
 	net.Conn
-	frameDepth int
+	windowSize int
 	pool       BufferPool
 	out        chan []byte
 	streams    map[uint32]*stream
@@ -157,8 +157,8 @@ func (s *session) getOrCreateStream(id uint32) *stream {
 		id:      _id,
 		session: s,
 		pool:    s.pool,
-		rb:      newReceiveBuffer(_id, s.out, s.pool, s.frameDepth),
-		sb:      newSendBuffer(_id, s.out, s.frameDepth),
+		rb:      newReceiveBuffer(_id, s.out, s.pool, s.windowSize),
+		sb:      newSendBuffer(_id, s.out, s.windowSize),
 	}
 	s.streams[id] = c
 	s.mx.Unlock()

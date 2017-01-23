@@ -6,11 +6,10 @@ import (
 )
 
 type listener struct {
-	wrapped    net.Listener
-	frameDepth int
-	pool       BufferPool
-	errCh      chan error
-	connCh     chan net.Conn
+	wrapped net.Listener
+	pool    BufferPool
+	errCh   chan error
+	connCh  chan net.Conn
 }
 
 // WrapListener wraps the given listener with support for multiplexing. Only
@@ -19,18 +18,13 @@ type listener struct {
 // listener can be used to serve clients that do multiplex and clients that
 // don't.
 //
-// frameDepth - how many frames to queue, used to bound memory use. Each frame
-// takes about 64KB of memory.
-//
 // pool - BufferPool to use
-func WrapListener(wrapped net.Listener, frameDepth int, pool BufferPool) net.Listener {
-	// TODO: maybe we should get the frame depth from the opening frame from client?
+func WrapListener(wrapped net.Listener, pool BufferPool) net.Listener {
 	l := &listener{
-		wrapped:    wrapped,
-		frameDepth: frameDepth,
-		pool:       pool,
-		connCh:     make(chan net.Conn),
-		errCh:      make(chan error),
+		wrapped: wrapped,
+		pool:    pool,
+		connCh:  make(chan net.Conn),
+		errCh:   make(chan error),
 	}
 	go l.process()
 	return l
@@ -68,18 +62,20 @@ func (l *listener) process() {
 }
 
 func (l *listener) onConn(conn net.Conn) {
-	b := make([]byte, sessionStartLength)
+	b := make([]byte, sessionStartTotalLen)
 	// Try to read start sequence
-	n, err := io.ReadFull(conn, b)
+	_, err := io.ReadFull(conn, b)
 	if err != nil {
 		l.errCh <- err
 		return
 	}
-	if n == sessionStartLength && string(b) == sessionStart {
+	if string(b[:sessionStartHeaderLen]) == sessionStart {
 		// It's a multiplexed connection
+		// TODO: check the version
+		windowSize := int(b[sessionStartTotalLen-1])
 		s := &session{
 			Conn:       conn,
-			frameDepth: l.frameDepth,
+			windowSize: windowSize,
 			pool:       l.pool,
 			out:        make(chan []byte),
 			streams:    make(map[uint32]*stream),

@@ -12,14 +12,14 @@ import (
 // future streams, until there's a problem with that Conn, and so on and so
 // forth.
 //
-// frameDepth - how many frames to queue, used to bound memory use. Each frame
-// takes about 64KB of memory.
+// windowSize - how many frames to queue, used to bound memory use. Each frame
+// takes about 8KB of memory.
 //
 // pool - BufferPool to use
-func Dialer(frameDepth int, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
+func Dialer(windowSize int, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
 	d := &dialer{
 		doDial:     dial,
-		frameDepth: frameDepth,
+		windowSize: windowSize,
 		pool:       pool,
 	}
 	return d.dial
@@ -27,7 +27,7 @@ func Dialer(frameDepth int, pool BufferPool, dial func() (net.Conn, error)) func
 
 type dialer struct {
 	doDial     func() (net.Conn, error)
-	frameDepth int
+	windowSize int
 	pool       BufferPool
 	current    *session
 	id         uint32
@@ -43,14 +43,18 @@ func (d *dialer) dial() (net.Conn, error) {
 			d.mx.Unlock()
 			return nil, err
 		}
-		_, writeErr := conn.Write(sessionStartBytes)
+		sessionStart := make([]byte, sessionStartTotalLen)
+		copy(sessionStart, sessionStartBytes)
+		sessionStart[sessionStartHeaderLen] = protocolVersion1
+		sessionStart[sessionStartHeaderLen+1] = byte(d.windowSize)
+		_, writeErr := conn.Write(sessionStart)
 		if writeErr != nil {
 			conn.Close()
 			return nil, writeErr
 		}
 		current = &session{
 			Conn:       conn,
-			frameDepth: d.frameDepth,
+			windowSize: d.windowSize,
 			pool:       d.pool,
 			out:        make(chan []byte),
 			streams:    make(map[uint32]*stream),
@@ -60,7 +64,7 @@ func (d *dialer) dial() (net.Conn, error) {
 		d.current = current
 	}
 	id := d.id
-	d.id += 1
+	d.id++
 	d.mx.Unlock()
 	return current.getOrCreateStream(id), nil
 }

@@ -5,21 +5,22 @@
 //
 // Framing format:
 //
-//   \0cmstart\0 - this special sequence is sent to indicate the start of a
-//                 a multiplexed session, to distinguish it from regular traffic.
+//   \0cmstart\0|version|window - starting sequence of a session
+//
+//     version - 1 byte, the version of the protocol (currently 1)
+//     window  - 1 byte, the size of the transmit window, expressed in # of frames
 //
 //   T|SID|DLEN|DATA - format of frames in multiplexed session
 //
 //     T (frame type)     - 1 byte, indicates the frame type. 0 = data frame, 1 = ack, 2 = rst (close connection)
 //     SID (stream id)    - 3 bytes, unique identifier for stream
-//     DLEN (data length) - 4 bytes, indicates the length of the following data section
+//     DLEN (data length) - 2 bytes, indicates the length of the following data section, currently limited to 8192 bytes
 //
 // This makes the maximum total frame size 65544 bytes.
 package connmux
 
 import (
 	"encoding/binary"
-	"errors"
 
 	"github.com/getlantern/golog"
 	"github.com/oxtoacart/bpool"
@@ -39,26 +40,33 @@ const (
 	frameTypeData = 0
 	frameTypeACK  = 1
 	frameTypeRST  = 2
+
+	protocolVersion1 = 1
 )
 
 var (
 	log = golog.LoggerFor("connmux")
 
-	ErrTimeout          = &timeoutError{}
-	ErrConnectionClosed = errors.New("connection closed") // TODO: make a net.Error?
-	ErrListenerClosed   = errors.New("listener closed")   // TODO: make a net.Error?
+	ErrTimeout          = &netError{"i/o timeout", true, true}
+	ErrConnectionClosed = &netError{"connection closed", false, false}
+	ErrListenerClosed   = &netError{"listener closed", false, false}
 
 	binaryEncoding = binary.BigEndian
 
-	sessionStartBytes  = []byte(sessionStart)
-	sessionStartLength = len(sessionStartBytes)
+	sessionStartBytes     = []byte(sessionStart)
+	sessionStartHeaderLen = len(sessionStartBytes)
+	sessionStartTotalLen  = sessionStartHeaderLen + 2
 )
 
-type timeoutError struct{}
+type netError struct {
+	err       string
+	timeout   bool
+	temporary bool
+}
 
-func (e *timeoutError) Error() string   { return "i/o timeout" }
-func (e *timeoutError) Timeout() bool   { return true }
-func (e *timeoutError) Temporary() bool { return true }
+func (e *netError) Error() string   { return e.err }
+func (e *netError) Timeout() bool   { return e.timeout }
+func (e *netError) Temporary() bool { return e.temporary }
 
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {

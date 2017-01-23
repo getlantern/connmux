@@ -13,7 +13,7 @@ import (
 const (
 	testdata = "Hello Dear World"
 
-	frameDepth = 2
+	windowSize = 2
 )
 
 func TestConnNoMultiplex(t *testing.T) {
@@ -39,7 +39,7 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 	}
 
 	pool := NewBufferPool(100)
-	l := WrapListener(wrapped, 10, pool)
+	l := WrapListener(wrapped, pool)
 	defer l.Close()
 
 	var wg sync.WaitGroup
@@ -103,12 +103,12 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 func TestConcurrency(t *testing.T) {
 	concurrency := 100
 
-	pool := NewBufferPool(concurrency * frameDepth * 3)
+	pool := NewBufferPool(concurrency * windowSize * 3)
 	_lst, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Unable to listen: %v", err)
 	}
-	lst := WrapListener(_lst, frameDepth, pool)
+	lst := WrapListener(_lst, pool)
 
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
@@ -126,7 +126,7 @@ func TestConcurrency(t *testing.T) {
 		}
 	}()
 
-	dial := Dialer(frameDepth, NewBufferPool(100), func() (net.Conn, error) {
+	dial := Dialer(windowSize, NewBufferPool(100), func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})
 
@@ -197,9 +197,9 @@ func BenchmarkConnMux(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	lst := WrapListener(_lst, frameDepth, NewBufferPool(100))
+	lst := WrapListener(_lst, NewBufferPool(100))
 
-	conn, err := Dialer(frameDepth, NewBufferPool(100), func() (net.Conn, error) {
+	conn, err := Dialer(25, NewBufferPool(100), func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})()
 	if err != nil {
