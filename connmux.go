@@ -22,12 +22,30 @@
 //   Write
 //
 //      client --> frame --> server
+//      client --> frame --> server
+//      client --> frame --> server
+//      ... continue up to window
 //      client <--  ack  <-- server
+//      client --> frame --> server
+//      client <--  ack  <-- server
+//      client <--  ack  <-- server
+//      client --> frame --> server
+//      client --> frame --> server
+//      ... etc ...
 //
 //   Read (parallel to write)
 //
 //      client <-- frame <-- server
+//      client <-- frame <-- server
+//      client <-- frame <-- server
+//      ... continue up to window
 //      client -->  ack  --> server
+//      client <-- frame <-- server
+//      client -->  ack  --> server
+//      client -->  ack  --> server
+//      client <-- frame <-- server
+//      client <-- frame <-- server
+//      ... etc ...
 //
 // Wire format:
 //
