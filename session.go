@@ -24,19 +24,7 @@ func (s *session) readLoop() {
 		id := b[:idLen]
 		_, err := io.ReadFull(s, id)
 		if err != nil {
-			if err == io.EOF {
-				s.mx.RLock()
-				streams := make([]*stream, 0, len(s.streams))
-				for _, c := range s.streams {
-					streams = append(streams, c)
-				}
-				s.mx.RUnlock()
-				for _, c := range streams {
-					c.Close()
-				}
-			} else {
-				// TODO: propagate read error
-			}
+			s.onSessionError(err, nil)
 			s.Conn.Close()
 			return
 		}
@@ -64,7 +52,7 @@ func (s *session) readLoop() {
 			s.mx.Unlock()
 			// Close, but don't send an RST back the other way since the other end is
 			// already closed.
-			c.close(false)
+			c.close(false, io.EOF, nil)
 			continue
 		}
 
@@ -72,14 +60,7 @@ func (s *session) readLoop() {
 		dataLength := b[idLen:frameHeaderLen]
 		_, err = io.ReadFull(s, dataLength)
 		if err != nil {
-			// TODO: DRY
-			if err == io.EOF {
-				for _, c := range s.streams {
-					c.Close()
-				}
-			} else {
-				// TODO: propagate read error
-			}
+
 			s.Conn.Close()
 			return
 		}
@@ -90,14 +71,7 @@ func (s *session) readLoop() {
 		b = b[:frameHeaderLen+_dataLength]
 		_, err = io.ReadFull(s, b[frameHeaderLen:])
 		if err != nil {
-			// TODO: DRY
-			if err == io.EOF {
-				for _, c := range s.streams {
-					c.Close()
-				}
-			} else {
-				// TODO: propagate read error
-			}
+			s.onSessionError(err, nil)
 			s.Conn.Close()
 			return
 		}
@@ -116,8 +90,7 @@ func (s *session) writeLoop() {
 		id := frame[dataLen:]
 		_, err := s.Write(id)
 		if err != nil {
-			// TODO: handle error gracefully
-			log.Error(err)
+			s.onSessionError(nil, err)
 			return
 		}
 		if frameType(id) != frameTypeData {
@@ -128,18 +101,42 @@ func (s *session) writeLoop() {
 		binaryEncoding.PutUint16(length, uint16(dataLen))
 		_, err = s.Write(length)
 		if err != nil {
-			// TODO: handle error gracefully
-			log.Error(err)
+			s.onSessionError(nil, err)
 			return
 		}
 		_, err = s.Write(frame[:dataLen])
 		// Put frame back in pool
 		s.pool.Put(frame[:maxFrameLen])
 		if err != nil {
-			// TODO: handle error gracefully
-			log.Error(err)
+			s.onSessionError(nil, err)
 			return
 		}
+	}
+}
+
+func (s *session) onSessionError(readErr error, writeErr error) {
+	if readErr != nil {
+		log.Errorf("Error on reading: %v", readErr)
+	}
+	if writeErr != nil {
+		log.Errorf("Error on writing: %v", writeErr)
+	}
+	if readErr == io.EOF {
+		// Treat EOF as ErrUnexpectedEOF because the underlying connection should
+		// never be out of data until and unless the stream has been closed with an
+		// RST frame.
+		readErr = io.ErrUnexpectedEOF
+	}
+	s.mx.RLock()
+	streams := make([]*stream, 0, len(s.streams))
+	for _, c := range s.streams {
+		streams = append(streams, c)
+	}
+	s.mx.RUnlock()
+	for _, c := range streams {
+		// Note - we never send an RST because the underlying connection is
+		// considered no good at this point and we won't bother sending anything.
+		c.close(false, readErr, writeErr)
 	}
 }
 

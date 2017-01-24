@@ -13,7 +13,7 @@ import (
 // forth.
 //
 // windowSize - how many frames to queue, used to bound memory use. Each frame
-// takes about 8KB of memory.
+// takes about 8KB of memory. 25 is a good default.
 //
 // pool - BufferPool to use
 func Dialer(windowSize int, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
@@ -37,6 +37,8 @@ type dialer struct {
 func (d *dialer) dial() (net.Conn, error) {
 	d.mx.Lock()
 	current := d.current
+	// TODO: check for id exhaustion and open a new connection then too
+	// TODO: support pooling of connections (i.e. keep multiple physical connections in flight)
 	if current == nil {
 		conn, err := d.doDial()
 		if err != nil {

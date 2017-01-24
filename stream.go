@@ -16,22 +16,24 @@ type stream struct {
 	readDeadline  time.Time
 	writeDeadline time.Time
 	closed        bool
+	finalReadErr  error
+	finalWriteErr error
 	mx            sync.RWMutex
 }
 
 func (c *stream) Read(b []byte) (int, error) {
 	c.mx.RLock()
-	closed := c.closed
 	readDeadline := c.readDeadline
+	finalReadErr := c.finalReadErr
 	c.mx.RUnlock()
-	if closed {
-		return 0, ErrConnectionClosed
+	if finalReadErr != nil {
+		return 0, finalReadErr
 	}
 	return c.rb.read(b, readDeadline)
 }
 
 func (c *stream) Write(b []byte) (int, error) {
-	// TODO: make sure this splitting works
+	// TODO: test to make sure this splitting works
 	if len(b) > MaxDataLen {
 		return c.writeChunks(b)
 	}
@@ -39,12 +41,17 @@ func (c *stream) Write(b []byte) (int, error) {
 	c.mx.RLock()
 	closed := c.closed
 	writeDeadline := c.writeDeadline
+	finalWriteErr := c.finalWriteErr
 	c.mx.RUnlock()
+	if finalWriteErr != nil {
+		return 0, finalWriteErr
+	}
 	if closed {
 		// Make it look like the write worked even though we're not going to send it
 		// anywhere (TODO, might be better way to handle this?)
 		return len(b), nil
 	}
+
 	// copy buffer since we hang on to it past the call to Write but callers
 	// expect that they can reuse the buffer after Write returns
 	_b := b
@@ -89,14 +96,16 @@ func (c *stream) writeChunks(b []byte) (int, error) {
 }
 
 func (c *stream) Close() error {
-	return c.close(true)
+	return c.close(true, ErrConnectionClosed, nil)
 }
 
-func (c *stream) close(sendRST bool) error {
+func (c *stream) close(sendRST bool, readErr error, writeErr error) error {
 	didClose := false
 	c.mx.Lock()
 	if !c.closed {
 		c.closed = true
+		c.finalReadErr = readErr
+		c.finalWriteErr = writeErr
 		didClose = true
 	}
 	c.mx.Unlock()
