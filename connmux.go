@@ -11,7 +11,7 @@
 //                         connection
 //
 //   session             - unit for managing multiplexed streams, corresponds
-//                        1 to 1 with a physical connection
+//                         1 to 1 with a physical connection
 //
 // Protocol:
 //
