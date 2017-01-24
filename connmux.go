@@ -99,10 +99,10 @@ func (e *netError) Temporary() bool { return e.temporary }
 
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {
-	// getForFrame gets a complete buffer large enough to hold an entire connmux frame (65,541 bytes)
+	// getForFrame gets a complete buffer large enough to hold an entire connmux frame (8198 bytes)
 	getForFrame() []byte
 
-	// Get gets a truncated buffer sized to hold the data portion of a connmux frame (65,535 bytes)
+	// Get gets a truncated buffer sized to hold the data portion of a connmux frame (8192 bytes)
 	Get() []byte
 
 	// Put returns a buffer back to the pool, indicating that it is safe to
