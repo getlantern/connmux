@@ -26,8 +26,53 @@ func TestConnMultiplex(t *testing.T) {
 	doTestConnBasicFlow(t, true)
 }
 
+func TestWriteSplitting(t *testing.T) {
+	multiplier := 10000
+	size := len(testdata) * multiplier
+	reallyBigData := make([]byte, 0, size)
+	for i := 0; i < multiplier; i++ {
+		reallyBigData = append(reallyBigData, testdata...)
+	}
+
+	l, dial, wg, err := doEchoServerAndDialer(true)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer l.Close()
+
+	conn, err := dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer conn.Close()
+
+	var wg2 sync.WaitGroup
+	wg2.Add(1)
+	go func() {
+		// Read on a separate goroutine to unblock buffers
+		defer wg2.Done()
+		b := make([]byte, size)
+		n, err := io.ReadFull(conn, b)
+		if !assert.NoError(t, err) {
+			return
+		}
+		assert.Equal(t, size, n)
+		assert.Equal(t, string(reallyBigData), string(b[:n]))
+	}()
+
+	n, err := conn.Write(reallyBigData)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, size, n)
+
+	wg2.Wait()
+	conn.Close()
+	wg.Wait()
+}
+
 func TestStreamCloseRemoteAfterEcho(t *testing.T) {
-	l, dial, _, err := doEchoServerAndDialer(true)
+	l, dial, wg, err := doEchoServerAndDialer(true)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -44,8 +89,12 @@ func TestStreamCloseRemoteAfterEcho(t *testing.T) {
 		return
 	}
 
+	time.Sleep(50 * time.Millisecond)
 	b := make([]byte, 4)
 	n, err := conn.Read(b)
+	if !assert.Equal(t, io.EOF, err) {
+		return
+	}
 	assert.Equal(t, "stop", string(b[:n]))
 
 	// Try to read again, should get EOF
@@ -55,6 +104,8 @@ func TestStreamCloseRemoteAfterEcho(t *testing.T) {
 
 	_, err = conn.Write([]byte("whatever"))
 	assert.NoError(t, err, "We got an EOF on read, but writing should still work")
+
+	wg.Wait()
 }
 
 func TestPhysicalConnCloseRemotePrematurely(t *testing.T) {
