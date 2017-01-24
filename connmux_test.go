@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/getlantern/fdcount"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,6 +23,39 @@ func TestConnNoMultiplex(t *testing.T) {
 
 func TestConnMultiplex(t *testing.T) {
 	doTestConnBasicFlow(t, true)
+}
+
+// Note - to get this test to work in a reasonable amount of time, manually
+// change maxID to a lower value.
+func testConnIDExhaustion(t *testing.T) {
+	l, dial, _, err := doEchoServerAndDialer(true)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer l.Close()
+
+	_, connCount, err := fdcount.Matching("TCP")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	for i := 0; i <= maxID; i++ {
+		conn, err := dial()
+		if !assert.NoError(t, err) {
+			return
+		}
+		defer conn.Close()
+	}
+
+	assert.NoError(t, connCount.AssertDelta(2), "Opening up to MaxID should have resulted in 1 connection (2 TCP sockets including server end)")
+
+	conn, err := dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer conn.Close()
+
+	assert.NoError(t, connCount.AssertDelta(4), "Opening past MaxID should have resulted in 2 connections (4 TCP sockets including server end)")
 }
 
 func doTestConnBasicFlow(t *testing.T, mux bool) {
@@ -73,32 +107,35 @@ func doEchoServerAndDialer(mux bool) (net.Listener, func() (net.Conn, error), *s
 	l := WrapListener(wrapped, pool)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		conn, acceptErr := l.Accept()
 		if acceptErr != nil {
 			log.Errorf("Unable to accept connection: %v", acceptErr)
 			return
 		}
-		defer conn.Close()
 
-		b := make([]byte, 4)
-		for {
-			n, readErr := conn.Read(b)
-			if readErr != nil && readErr != io.EOF {
-				log.Errorf("Error reading for echo: %v", readErr)
-				return
+		wg.Add(1)
+		go func() {
+			defer conn.Close()
+			defer wg.Done()
+
+			b := make([]byte, 4)
+			for {
+				n, readErr := conn.Read(b)
+				if readErr != nil && readErr != io.EOF {
+					log.Errorf("Error reading for echo: %v", readErr)
+					return
+				}
+				_, writeErr := conn.Write(b[:n])
+				if writeErr != nil {
+					log.Errorf("Error writing for echo: %v", writeErr)
+					return
+				}
+				if readErr == io.EOF {
+					return
+				}
 			}
-			_, writeErr := conn.Write(b[:n])
-			if writeErr != nil {
-				log.Errorf("Error writing for echo: %v", writeErr)
-				return
-			}
-			if readErr == io.EOF {
-				return
-			}
-		}
+		}()
 	}()
 
 	dialer := func() (net.Conn, error) {

@@ -50,9 +50,11 @@ func (s *session) readLoop() {
 			c := s.streams[_id]
 			delete(s.streams, _id)
 			s.mx.Unlock()
-			// Close, but don't send an RST back the other way since the other end is
-			// already closed.
-			c.close(false, io.EOF, nil)
+			if c != nil {
+				// Close, but don't send an RST back the other way since the other end is
+				// already closed.
+				c.close(false, io.EOF, nil)
+			}
 			continue
 		}
 
