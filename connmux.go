@@ -27,16 +27,20 @@
 //
 // Wire format:
 //
-//   start of session
+//   start of session, 11 bytes
 //
 //     \0cmstart\0<version><window>
 //
-//       \0cmstart\0 - hardcoded sequence beginning and ending with \0 (NUL) byte that indicates beginning of session
+//       \0cmstart\0 - hardcoded sequence beginning and ending with \0 (NUL)
+//                     byte that indicates beginning of session
+//
 //       version     - 1 byte, the version of the protocol (currently 1)
-//       window      - 1 byte, the size of the transmit window, expressed in # of frames
+//
+//       window      - 1 byte, the size of the transmit window, expressed in
+//                     # of frames
 //
 //
-//   data and control frames (positional, not delimited)
+//   data and control frames (positional, not delimited), maximum 8198 bytes
 //
 //     <T><SID><DLEN>[<DATA>]
 //
@@ -51,8 +55,6 @@
 //       DLEN (data length) - 2 bytes, length of data section
 //
 //       DATA               - Up to 8192 bytes, the data being transmitted
-//
-// This makes the maximum total frame size 8198 bytes.
 package connmux
 
 import (
