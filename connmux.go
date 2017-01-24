@@ -41,7 +41,7 @@
 //     <T><SID><DLEN>[<DATA>]
 //
 //       T (frame type)     - 1 byte, indicates the frame type. 0 = data frame, 1 = ack, 2 = rst (close connection)
-//       SID (stream id)    - 3 bytes, unique identifier for stream. Last field
+//       SID (stream id)    - 3 bytes, unique identifier for stream. Last field for non-data messages.
 //       DLEN (data length) - 2 bytes, indicates the length of the following data section
 //       DATA               - Up to 8192 bytes, the data being transmitted
 //
