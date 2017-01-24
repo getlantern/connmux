@@ -84,6 +84,29 @@ func TestPhysicalConnCloseRemotePrematurely(t *testing.T) {
 	assert.Equal(t, ErrBrokenPipe, err)
 }
 
+func TestStreamCloseLocalPrematurely(t *testing.T) {
+	l, dial, _, err := doEchoServerAndDialer(true)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer l.Close()
+
+	conn, err := dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+	// Close stream immediately
+	conn.Close()
+
+	_, err = conn.Write([]byte("stop"))
+	assert.Equal(t, ErrConnectionClosed, err)
+
+	b := make([]byte, 4)
+	n, err := conn.Read(b)
+	assert.Equal(t, ErrConnectionClosed, err)
+	assert.Equal(t, 0, n)
+}
+
 func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
 	l, dial, _, err := doEchoServerAndDialer(true)
 	if !assert.NoError(t, err) {
@@ -97,15 +120,14 @@ func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
 	}
 	// Close physical connection immediately
 	conn.(*stream).session.Close()
+	time.Sleep(50 * time.Millisecond)
 
 	_, err = conn.Write([]byte("stop"))
-	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, ErrBrokenPipe, err)
 
 	b := make([]byte, 4)
 	n, err := conn.Read(b)
-	_, err = conn.Write([]byte("stop"))
-	assert.Equal(t, ErrBrokenPipe, err)
+	assert.Error(t, err)
 	assert.Equal(t, 0, n)
 }
 
