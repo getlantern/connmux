@@ -102,6 +102,8 @@ const (
 	frameTypeRST  = 2
 
 	protocolVersion1 = 1
+
+	maxID = (2 << 31) - 1
 )
 
 var (

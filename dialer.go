@@ -37,9 +37,15 @@ type dialer struct {
 func (d *dialer) dial() (net.Conn, error) {
 	d.mx.Lock()
 	current := d.current
-	// TODO: check for id exhaustion and open a new connection then too
+	idsExhausted := false
+	if d.id > maxID {
+		log.Debug("Exhausted maximum allowed IDs on one physical connection, will open new connection")
+		idsExhausted = true
+		d.id = 0
+	}
+
 	// TODO: support pooling of connections (i.e. keep multiple physical connections in flight)
-	if current == nil {
+	if current == nil || idsExhausted {
 		conn, err := d.doDial()
 		if err != nil {
 			d.mx.Unlock()

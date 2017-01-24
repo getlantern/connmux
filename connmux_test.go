@@ -17,61 +17,20 @@ const (
 )
 
 func TestConnNoMultiplex(t *testing.T) {
-	doTestConnBasicFlow(t, func(network, addr string) func() (net.Conn, error) {
-		return func() (net.Conn, error) {
-			return net.Dial(network, addr)
-		}
-	})
+	doTestConnBasicFlow(t, false)
 }
 
 func TestConnMultiplex(t *testing.T) {
-	doTestConnBasicFlow(t, func(network, addr string) func() (net.Conn, error) {
-		return Dialer(10, NewBufferPool(100), func() (net.Conn, error) {
-			return net.Dial(network, addr)
-		})
-	})
+	doTestConnBasicFlow(t, true)
 }
 
-func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() (net.Conn, error)) {
-	wrapped, err := net.Listen("tcp", "localhost:0")
+func doTestConnBasicFlow(t *testing.T, mux bool) {
+	l, dial, wg, err := doEchoServerAndDialer(mux)
 	if !assert.NoError(t, err) {
 		return
 	}
-
-	pool := NewBufferPool(100)
-	l := WrapListener(wrapped, pool)
 	defer l.Close()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		conn, acceptErr := l.Accept()
-		if !assert.NoError(t, acceptErr) {
-			return
-		}
-		defer conn.Close()
-
-		b := make([]byte, 4)
-		for {
-			n, readErr := conn.Read(b)
-			if readErr != io.EOF && !assert.NoError(t, readErr, "Error reading for echo") {
-				return
-			}
-			n2, writeErr := conn.Write(b[:n])
-			if !assert.NoError(t, writeErr, "Error writing echo") {
-				return
-			}
-			if !assert.Equal(t, n, n2) {
-				return
-			}
-			if readErr == io.EOF {
-				return
-			}
-		}
-	}()
-
-	dial := dialer("tcp", l.Addr().String())
 	conn, err := dial()
 	if !assert.NoError(t, err) {
 		return
@@ -98,6 +57,59 @@ func doTestConnBasicFlow(t *testing.T, dialer func(network, addr string) func() 
 	assert.Equal(t, testdata, string(b))
 	conn.Close()
 	wg.Wait()
+}
+
+func echoServerAndDialer() (net.Listener, func() (net.Conn, error), *sync.WaitGroup, error) {
+	return doEchoServerAndDialer(true)
+}
+
+func doEchoServerAndDialer(mux bool) (net.Listener, func() (net.Conn, error), *sync.WaitGroup, error) {
+	wrapped, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	pool := NewBufferPool(100)
+	l := WrapListener(wrapped, pool)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, acceptErr := l.Accept()
+		if acceptErr != nil {
+			log.Errorf("Unable to accept connection: %v", acceptErr)
+			return
+		}
+		defer conn.Close()
+
+		b := make([]byte, 4)
+		for {
+			n, readErr := conn.Read(b)
+			if readErr != nil && readErr != io.EOF {
+				log.Errorf("Error reading for echo: %v", readErr)
+				return
+			}
+			_, writeErr := conn.Write(b[:n])
+			if writeErr != nil {
+				log.Errorf("Error writing for echo: %v", writeErr)
+				return
+			}
+			if readErr == io.EOF {
+				return
+			}
+		}
+	}()
+
+	dialer := func() (net.Conn, error) {
+		return net.Dial("tcp", l.Addr().String())
+	}
+
+	if mux {
+		dialer = Dialer(windowSize, pool, dialer)
+	}
+
+	return l, dialer, &wg, nil
 }
 
 func TestConcurrency(t *testing.T) {
