@@ -112,16 +112,6 @@ func (buf *receiveBuffer) close() {
 	buf.mx.Lock()
 	if !buf.closed {
 		buf.closed = true
-	drainLoop:
-		for {
-			select {
-			case <-buf.in:
-				// okay
-			default:
-				// done
-				break drainLoop
-			}
-		}
 		close(buf.in)
 	}
 	buf.mx.Unlock()

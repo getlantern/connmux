@@ -119,9 +119,13 @@ func (s *session) writeLoop() {
 func (s *session) onSessionError(readErr error, writeErr error) {
 	if readErr != nil {
 		log.Errorf("Error on reading: %v", readErr)
+	} else {
+		readErr = ErrBrokenPipe
 	}
 	if writeErr != nil {
 		log.Errorf("Error on writing: %v", writeErr)
+	} else {
+		writeErr = ErrBrokenPipe
 	}
 	if readErr == io.EOF {
 		// Treat EOF as ErrUnexpectedEOF because the underlying connection should
@@ -166,3 +170,5 @@ func (s *session) getOrCreateStream(id uint32) *stream {
 	}
 	return c
 }
+
+// TODO: do we need a way to close a session/physical connection intentionally?

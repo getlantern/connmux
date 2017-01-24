@@ -111,6 +111,7 @@ var (
 
 	ErrTimeout          = &netError{"i/o timeout", true, true}
 	ErrConnectionClosed = &netError{"connection closed", false, false}
+	ErrBrokenPipe       = &netError{"broken pipe", false, false}
 	ErrListenerClosed   = &netError{"listener closed", false, false}
 
 	binaryEncoding = binary.BigEndian

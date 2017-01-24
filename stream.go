@@ -96,7 +96,7 @@ func (c *stream) writeChunks(b []byte) (int, error) {
 }
 
 func (c *stream) Close() error {
-	return c.close(true, ErrConnectionClosed, nil)
+	return c.close(true, nil, ErrConnectionClosed)
 }
 
 func (c *stream) close(sendRST bool, readErr error, writeErr error) error {

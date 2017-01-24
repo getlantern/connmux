@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/getlantern/fdcount"
 	"github.com/stretchr/testify/assert"
@@ -23,6 +24,89 @@ func TestConnNoMultiplex(t *testing.T) {
 
 func TestConnMultiplex(t *testing.T) {
 	doTestConnBasicFlow(t, true)
+}
+
+func TestStreamCloseRemoteAfterEcho(t *testing.T) {
+	l, dial, _, err := doEchoServerAndDialer(true)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer l.Close()
+
+	conn, err := dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer conn.Close()
+
+	_, err = conn.Write([]byte("stop"))
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	b := make([]byte, 4)
+	n, err := conn.Read(b)
+	assert.Equal(t, "stop", string(b[:n]))
+
+	// Try to read again, should get EOF
+	n, err = conn.Read(b)
+	assert.Equal(t, io.EOF, err)
+	assert.Equal(t, 0, n)
+
+	_, err = conn.Write([]byte("whatever"))
+	assert.NoError(t, err, "We got an EOF on read, but writing should still work")
+}
+
+func TestPhysicalConnCloseRemotePrematurely(t *testing.T) {
+	l, dial, _, err := doEchoServerAndDialer(true)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer l.Close()
+
+	conn, err := dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer conn.Close()
+
+	_, err = conn.Write([]byte("kill"))
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	b := make([]byte, 4)
+	n, err := conn.Read(b)
+	assert.Equal(t, io.EOF, err)
+	assert.Equal(t, 0, n)
+
+	_, err = conn.Write([]byte("whatever"))
+	assert.Equal(t, ErrBrokenPipe, err)
+}
+
+func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
+	l, dial, _, err := doEchoServerAndDialer(true)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer l.Close()
+
+	conn, err := dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+	// Close physical connection immediately
+	conn.(*stream).session.Close()
+
+	_, err = conn.Write([]byte("stop"))
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, ErrBrokenPipe, err)
+
+	b := make([]byte, 4)
+	n, err := conn.Read(b)
+	_, err = conn.Write([]byte("stop"))
+	assert.Equal(t, ErrBrokenPipe, err)
+	assert.Equal(t, 0, n)
 }
 
 // Note - to get this test to work in a reasonable amount of time, manually
@@ -126,12 +210,20 @@ func doEchoServerAndDialer(mux bool) (net.Listener, func() (net.Conn, error), *s
 					log.Errorf("Error reading for echo: %v", readErr)
 					return
 				}
+				if string(b) == "kill" {
+					// Interrupt the underlying connection to see what happens
+					conn.(*stream).session.Close()
+					return
+				}
 				_, writeErr := conn.Write(b[:n])
 				if writeErr != nil {
 					log.Errorf("Error writing for echo: %v", writeErr)
 					return
 				}
 				if readErr == io.EOF {
+					return
+				}
+				if string(b) == "stop" {
 					return
 				}
 			}
