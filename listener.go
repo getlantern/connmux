@@ -13,10 +13,10 @@ type listener struct {
 }
 
 // WrapListener wraps the given listener with support for multiplexing. Only
-// connections that start with the special session start header will be
+// connections that start with the special session start sequence will be
 // multiplexed, otherwise connections behave as normal. This means that a single
-// listener can be used to serve clients that do multiplex and clients that
-// don't.
+// listener can be used to serve clients that do multiplexing as well as other
+// clients that don't.
 //
 // pool - BufferPool to use
 func WrapListener(wrapped net.Listener, pool BufferPool) net.Listener {

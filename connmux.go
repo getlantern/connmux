@@ -3,18 +3,46 @@
 // they look and work just like regular net.Conns, including support for read
 // and write deadlines.
 //
-// Framing format:
+// Definitions:
 //
-//   \0cmstart\0|version|window - starting sequence of a session
+//   physical connection - an underlying (e.g. TCP) connection
+//   stream              - a virtual connection multiplexed over a physical connection
+//   session             - unit for managing multiplexed streams, corresponds 1 to 1 with a physical connection
 //
-//     version - 1 byte, the version of the protocol (currently 1)
-//     window  - 1 byte, the size of the transmit window, expressed in # of frames
+// Protocol:
 //
-//   T|SID|DLEN|DATA - format of frames in multiplexed session
+//   Seession initiation
 //
-//     T (frame type)     - 1 byte, indicates the frame type. 0 = data frame, 1 = ack, 2 = rst (close connection)
-//     SID (stream id)    - 3 bytes, unique identifier for stream
-//     DLEN (data length) - 2 bytes, indicates the length of the following data section, currently limited to 8192 bytes
+//      client --> start of session --> server
+//
+//   Write
+//
+//      client --> frame --> server
+//      client <--  ack  <-- server
+//
+//   Read (parallel to write)
+//
+//      client <-- frame <-- server
+//      client -->  ack  --> server
+//
+// Wire format:
+//
+//   start of session
+//
+//     \0cmstart\0<version><window>
+//
+//       \0cmstart\0 - hardcoded sequence beginning and ending with \0 (NUL) byte that indicates beginning of session
+//       version     - 1 byte, the version of the protocol (currently 1)
+//       window      - 1 byte, the size of the transmit window, expressed in # of frames
+//
+//
+//   data and control frames (positional, not delimited)
+//
+//     <T><SID><DLEN>[<DATA>]
+//
+//       T (frame type)     - 1 byte, indicates the frame type. 0 = data frame, 1 = ack, 2 = rst (close connection)
+//       SID (stream id)    - 3 bytes, unique identifier for stream. Last field
+//       DLEN (data length) - 2 bytes, indicates the length of the following data section, currently limited to 8192 bytes.
 //
 // This makes the maximum total frame size 65544 bytes.
 package connmux
