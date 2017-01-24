@@ -18,6 +18,9 @@ type listener struct {
 // listener can be used to serve clients that do multiplexing as well as other
 // clients that don't.
 //
+// Note - multiplexed sessions can only be initiated immediately after opening
+//        a connection to the Listener.
+//
 // pool - BufferPool to use
 func WrapListener(wrapped net.Listener, pool BufferPool) net.Listener {
 	l := &listener{

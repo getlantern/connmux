@@ -6,8 +6,12 @@
 // Definitions:
 //
 //   physical connection - an underlying (e.g. TCP) connection
-//   stream              - a virtual connection multiplexed over a physical connection
-//   session             - unit for managing multiplexed streams, corresponds 1 to 1 with a physical connection
+//
+//   stream              - a virtual connection multiplexed over a physical
+//                         connection
+//
+//   session             - unit for managing multiplexed streams, corresponds
+//                        1 to 1 with a physical connection
 //
 // Protocol:
 //
