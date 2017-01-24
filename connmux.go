@@ -40,9 +40,16 @@
 //
 //     <T><SID><DLEN>[<DATA>]
 //
-//       T (frame type)     - 1 byte, indicates the frame type. 0 = data frame, 1 = ack, 2 = rst (close connection)
-//       SID (stream id)    - 3 bytes, unique identifier for stream. Last field for non-data messages.
-//       DLEN (data length) - 2 bytes, indicates the length of the following data section
+//       T (frame type)     - 1 byte, indicates the frame type.
+//                                0 = data frame
+//                                1 = ack
+//                                2 = rst (close connection)
+//
+//       SID (stream id)    - 3 bytes, unique identifier for stream.
+//                                (last field for non-data messages)
+//
+//       DLEN (data length) - 2 bytes, length of data section
+//
 //       DATA               - Up to 8192 bytes, the data being transmitted
 //
 // This makes the maximum total frame size 8198 bytes.
@@ -99,10 +106,12 @@ func (e *netError) Temporary() bool { return e.temporary }
 
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {
-	// getForFrame gets a complete buffer large enough to hold an entire connmux frame (8198 bytes)
+	// getForFrame gets a complete buffer large enough to hold an entire connmux
+	// frame (8198 bytes).
 	getForFrame() []byte
 
-	// Get gets a truncated buffer sized to hold the data portion of a connmux frame (8192 bytes)
+	// Get gets a truncated buffer sized to hold the data portion of a connmux
+	// frame (8192 bytes)
 	Get() []byte
 
 	// Put returns a buffer back to the pool, indicating that it is safe to
