@@ -42,9 +42,10 @@
 //
 //       T (frame type)     - 1 byte, indicates the frame type. 0 = data frame, 1 = ack, 2 = rst (close connection)
 //       SID (stream id)    - 3 bytes, unique identifier for stream. Last field
-//       DLEN (data length) - 2 bytes, indicates the length of the following data section, currently limited to 8192 bytes.
+//       DLEN (data length) - 2 bytes, indicates the length of the following data section
+//       DATA               - Up to 8192 bytes, the data being transmitted
 //
-// This makes the maximum total frame size 65544 bytes.
+// This makes the maximum total frame size 8198 bytes.
 package connmux
 
 import (
