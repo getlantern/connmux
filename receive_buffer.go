@@ -32,19 +32,15 @@ func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth i
 func (buf *receiveBuffer) submit(b []byte) {
 	buf.mx.RLock()
 	closed := buf.closed
-	in := buf.in
-	buf.mx.RUnlock()
 	if closed {
+		buf.mx.RUnlock()
 		return
 	}
-	in <- b
+	buf.in <- b
+	buf.mx.RUnlock()
 }
 
 func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err error) {
-	buf.mx.RLock()
-	in := buf.in
-	buf.mx.RUnlock()
-
 	for {
 		n := copy(b, buf.current)
 		buf.current = buf.current[n:]
@@ -61,7 +57,7 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 		// immediately available.
 		b = b[n:]
 		select {
-		case frame, open := <-in:
+		case frame, open := <-buf.in:
 			// Read next frame, continue loop
 			if !open && frame == nil {
 				// we've hit the end
@@ -92,7 +88,7 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 				err = ErrTimeout
 				timer.Stop()
 				return
-			case frame, open := <-in:
+			case frame, open := <-buf.in:
 				// Read next frame, continue loop
 				timer.Stop()
 				if !open && frame == nil {

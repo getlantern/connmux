@@ -14,6 +14,7 @@ type session struct {
 	beforeClose func(*session)
 	out         chan []byte
 	streams     map[uint32]*stream
+	closed      map[uint32]bool
 	connCh      chan net.Conn
 	mx          sync.RWMutex
 }
@@ -42,13 +43,17 @@ func (s *session) readLoop() {
 
 		_id := binaryEncoding.Uint32(id)
 		if isACK {
-			c := s.getOrCreateStream(_id)
+			c, open := s.getOrCreateStream(_id)
+			if !open {
+				continue
+			}
 			c.sb.ack <- true
 			continue
 		} else if isRST {
 			s.mx.Lock()
 			c := s.streams[_id]
 			delete(s.streams, _id)
+			s.closed[_id] = true
 			s.mx.Unlock()
 			if c != nil {
 				// Close, but don't send an RST back the other way since the other end is
@@ -76,7 +81,10 @@ func (s *session) readLoop() {
 			return
 		}
 
-		c := s.getOrCreateStream(_id)
+		c, open := s.getOrCreateStream(_id)
+		if !open {
+			return
+		}
 		c.rb.submit(b)
 	}
 }
@@ -144,13 +152,19 @@ func (s *session) onSessionError(readErr error, writeErr error) {
 	}
 }
 
-func (s *session) getOrCreateStream(id uint32) *stream {
+func (s *session) getOrCreateStream(id uint32) (*stream, bool) {
 	s.mx.Lock()
 	c := s.streams[id]
 	if c != nil {
 		s.mx.Unlock()
-		return c
+		return c, true
 	}
+	closed := s.closed[id]
+	if closed {
+		s.mx.Unlock()
+		return nil, false
+	}
+
 	_id := make([]byte, idLen)
 	binaryEncoding.PutUint32(_id, id)
 	c = &stream{
@@ -166,7 +180,7 @@ func (s *session) getOrCreateStream(id uint32) *stream {
 	if s.connCh != nil {
 		s.connCh <- c
 	}
-	return c
+	return c, true
 }
 
 func (s *session) Close() error {

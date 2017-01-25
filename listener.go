@@ -82,6 +82,7 @@ func (l *listener) onConn(conn net.Conn) {
 			pool:       l.pool,
 			out:        make(chan []byte),
 			streams:    make(map[uint32]*stream),
+			closed:     make(map[uint32]bool),
 			connCh:     l.connCh,
 		}
 		go s.readLoop()

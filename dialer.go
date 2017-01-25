@@ -66,6 +66,7 @@ func (d *dialer) dial() (net.Conn, error) {
 			pool:        d.pool,
 			out:         make(chan []byte),
 			streams:     make(map[uint32]*stream),
+			closed:      make(map[uint32]bool),
 			beforeClose: d.sessionClosed,
 		}
 		go current.writeLoop()
@@ -75,7 +76,8 @@ func (d *dialer) dial() (net.Conn, error) {
 	id := d.id
 	d.id++
 	d.mx.Unlock()
-	return current.getOrCreateStream(id), nil
+	c, _ := current.getOrCreateStream(id)
+	return c, nil
 }
 
 func (d *dialer) sessionClosed(s *session) {
