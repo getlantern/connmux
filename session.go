@@ -45,6 +45,7 @@ func (s *session) readLoop() {
 		if isACK {
 			c, open := s.getOrCreateStream(_id)
 			if !open {
+				// Stream was already closed, ignore
 				continue
 			}
 			c.sb.ack <- true
@@ -83,7 +84,8 @@ func (s *session) readLoop() {
 
 		c, open := s.getOrCreateStream(_id)
 		if !open {
-			return
+			// Stream was already closed, ignore
+			continue
 		}
 		c.rb.submit(b)
 	}
@@ -123,6 +125,8 @@ func (s *session) writeLoop() {
 }
 
 func (s *session) onSessionError(readErr error, writeErr error) {
+	s.Close()
+
 	if readErr != nil {
 		log.Errorf("Error on reading: %v", readErr)
 	} else {

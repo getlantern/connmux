@@ -133,6 +133,24 @@ func TestPhysicalConnCloseRemotePrematurely(t *testing.T) {
 
 	_, err = conn.Write([]byte("whatever"))
 	assert.Equal(t, ErrBrokenPipe, err)
+
+	// Now dial again and make sure that works
+	conn, err = dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	_, err = conn.Write([]byte(testdata))
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	b = make([]byte, len(testdata))
+	n, err = io.ReadFull(conn, b)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, testdata, string(b[:n]))
 }
 
 func TestStreamCloseLocalPrematurely(t *testing.T) {
@@ -283,42 +301,44 @@ func doEchoServerAndDialer(mux bool) (net.Listener, func() (net.Conn, error), *s
 
 	var wg sync.WaitGroup
 	go func() {
-		conn, acceptErr := l.Accept()
-		if acceptErr != nil {
-			log.Errorf("Unable to accept connection: %v", acceptErr)
-			return
-		}
-
-		wg.Add(1)
-		go func() {
-			defer conn.Close()
-			defer wg.Done()
-
-			b := make([]byte, 4)
-			for {
-				n, readErr := conn.Read(b)
-				if readErr != nil && readErr != io.EOF {
-					log.Errorf("Error reading for echo: %v", readErr)
-					return
-				}
-				if string(b) == "kill" {
-					// Interrupt the underlying connection to see what happens
-					conn.(*stream).session.Close()
-					return
-				}
-				_, writeErr := conn.Write(b[:n])
-				if writeErr != nil {
-					log.Errorf("Error writing for echo: %v", writeErr)
-					return
-				}
-				if readErr == io.EOF {
-					return
-				}
-				if string(b) == "stop" {
-					return
-				}
+		for {
+			conn, acceptErr := l.Accept()
+			if acceptErr != nil {
+				log.Errorf("Unable to accept connection: %v", acceptErr)
+				return
 			}
-		}()
+
+			wg.Add(1)
+			go func() {
+				defer conn.Close()
+				defer wg.Done()
+
+				b := make([]byte, 4)
+				for {
+					n, readErr := conn.Read(b)
+					if readErr != nil && readErr != io.EOF {
+						log.Errorf("Error reading for echo: %v", readErr)
+						return
+					}
+					if string(b) == "kill" {
+						// Interrupt the underlying connection to see what happens
+						conn.(*stream).session.Close()
+						return
+					}
+					_, writeErr := conn.Write(b[:n])
+					if writeErr != nil {
+						log.Errorf("Error writing for echo: %v", writeErr)
+						return
+					}
+					if readErr == io.EOF {
+						return
+					}
+					if string(b) == "stop" {
+						return
+					}
+				}
+			}()
+		}
 	}()
 
 	dialer := func() (net.Conn, error) {
