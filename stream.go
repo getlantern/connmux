@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// a stream is a multiplexed net.Conn operating on top of a physical net.Conn
+// managed by a session.
 type stream struct {
 	net.Conn
 	id            []byte
@@ -33,7 +35,6 @@ func (c *stream) Read(b []byte) (int, error) {
 }
 
 func (c *stream) Write(b []byte) (int, error) {
-	// TODO: test to make sure this splitting works
 	if len(b) > MaxDataLen {
 		return c.writeChunks(b)
 	}
@@ -57,10 +58,13 @@ func (c *stream) Write(b []byte) (int, error) {
 	_b := b
 	b = c.pool.getForFrame()[:len(b)]
 	copy(b, _b)
+
 	if writeDeadline.IsZero() {
+		// Don't bother implementing a timeout
 		c.sb.in <- b
 		return len(b), nil
 	}
+
 	now := time.Now()
 	if writeDeadline.Before(now) {
 		return 0, ErrTimeout

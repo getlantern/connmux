@@ -7,6 +7,8 @@ import (
 	"sync"
 )
 
+// session encapsulates the multiplexing of streams onto a single "physical"
+// net.Conn.
 type session struct {
 	net.Conn
 	windowSize  int
@@ -19,6 +21,10 @@ type session struct {
 	mx          sync.RWMutex
 }
 
+// startSession starts a session on the given net.Conn using the given transmit
+// windowSize and pool. If connCh is provided, the session will notify of new
+// streams as they are opened. If beforeClose is provided, the session will use
+// it to notify when it's about to close.
 func startSession(conn net.Conn, windowSize int, pool BufferPool, connCh chan net.Conn, beforeClose func(*session)) *session {
 	s := &session{
 		Conn:        conn,
@@ -30,12 +36,12 @@ func startSession(conn net.Conn, windowSize int, pool BufferPool, connCh chan ne
 		connCh:      connCh,
 		beforeClose: beforeClose,
 	}
-	go s.writeLoop()
-	go s.readLoop()
+	go s.sendLoop()
+	go s.recvLoop()
 	return s
 }
 
-func (s *session) readLoop() {
+func (s *session) recvLoop() {
 	for {
 		b := s.pool.getForFrame()
 		// First read id
@@ -107,7 +113,7 @@ func (s *session) readLoop() {
 	}
 }
 
-func (s *session) writeLoop() {
+func (s *session) sendLoop() {
 	for frame := range s.out {
 		dataLen := len(frame) - idLen
 		if dataLen > MaxDataLen {
