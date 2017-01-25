@@ -61,11 +61,12 @@ func (d *dialer) dial() (net.Conn, error) {
 			return nil, writeErr
 		}
 		current = &session{
-			Conn:       conn,
-			windowSize: d.windowSize,
-			pool:       d.pool,
-			out:        make(chan []byte),
-			streams:    make(map[uint32]*stream),
+			Conn:        conn,
+			windowSize:  d.windowSize,
+			pool:        d.pool,
+			out:         make(chan []byte),
+			streams:     make(map[uint32]*stream),
+			beforeClose: d.sessionClosed,
 		}
 		go current.writeLoop()
 		go current.readLoop()
@@ -75,4 +76,13 @@ func (d *dialer) dial() (net.Conn, error) {
 	d.id++
 	d.mx.Unlock()
 	return current.getOrCreateStream(id), nil
+}
+
+func (d *dialer) sessionClosed(s *session) {
+	d.mx.Lock()
+	if d.current == s {
+		// Clear current session since it's no longer usable
+		d.current = nil
+	}
+	d.mx.Unlock()
 }

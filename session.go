@@ -9,12 +9,13 @@ import (
 
 type session struct {
 	net.Conn
-	windowSize int
-	pool       BufferPool
-	out        chan []byte
-	streams    map[uint32]*stream
-	connCh     chan net.Conn
-	mx         sync.RWMutex
+	windowSize  int
+	pool        BufferPool
+	beforeClose func(*session)
+	out         chan []byte
+	streams     map[uint32]*stream
+	connCh      chan net.Conn
+	mx          sync.RWMutex
 }
 
 func (s *session) readLoop() {
@@ -25,7 +26,6 @@ func (s *session) readLoop() {
 		_, err := io.ReadFull(s, id)
 		if err != nil {
 			s.onSessionError(err, nil)
-			s.Conn.Close()
 			return
 		}
 
@@ -62,8 +62,7 @@ func (s *session) readLoop() {
 		dataLength := b[idLen:frameHeaderLen]
 		_, err = io.ReadFull(s, dataLength)
 		if err != nil {
-
-			s.Conn.Close()
+			s.onSessionError(err, nil)
 			return
 		}
 
@@ -74,7 +73,6 @@ func (s *session) readLoop() {
 		_, err = io.ReadFull(s, b[frameHeaderLen:])
 		if err != nil {
 			s.onSessionError(err, nil)
-			s.Conn.Close()
 			return
 		}
 
@@ -169,6 +167,13 @@ func (s *session) getOrCreateStream(id uint32) *stream {
 		s.connCh <- c
 	}
 	return c
+}
+
+func (s *session) Close() error {
+	if s.beforeClose != nil {
+		s.beforeClose(s)
+	}
+	return s.Conn.Close()
 }
 
 // TODO: do we need a way to close a session/physical connection intentionally?

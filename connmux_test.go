@@ -52,8 +52,8 @@ func TestWriteSplitting(t *testing.T) {
 		// Read on a separate goroutine to unblock buffers
 		defer wg2.Done()
 		b := make([]byte, size)
-		n, err := io.ReadFull(conn, b)
-		if !assert.NoError(t, err) {
+		n, readErr := io.ReadFull(conn, b)
+		if !assert.NoError(t, readErr) {
 			return
 		}
 		assert.Equal(t, size, n)
@@ -180,6 +180,25 @@ func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
 	n, err := conn.Read(b)
 	assert.Error(t, err)
 	assert.Equal(t, 0, n)
+
+	// Now dial again and make sure that works
+	conn, err = dial()
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	_, err = conn.Write([]byte(testdata))
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	b = make([]byte, len(testdata))
+	n, err = io.ReadFull(conn, b)
+	log.Debug(n)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, testdata, string(b[:n]))
 }
 
 // Note - to get this test to work in a reasonable amount of time, manually
@@ -197,8 +216,8 @@ func testConnIDExhaustion(t *testing.T) {
 	}
 
 	for i := 0; i <= maxID; i++ {
-		conn, err := dial()
-		if !assert.NoError(t, err) {
+		conn, dialErr := dial()
+		if !assert.NoError(t, dialErr) {
 			return
 		}
 		defer conn.Close()
