@@ -12,8 +12,12 @@ import (
 // future streams, until there's a problem with that Conn, and so on and so
 // forth.
 //
+// If a new physical connection is needed but can't be established, the dialer
+// returns the underlying dial error.
+//
 // windowSize - how many frames to queue, used to bound memory use. Each frame
-// takes about 8KB of memory. 25 is a good default.
+// takes about 8KB of memory. 25 is a good default, 50 yields higher throughput,
+// more than 50 hasn't been seen to have much of an effect.
 //
 // pool - BufferPool to use
 func Dialer(windowSize int, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
@@ -46,28 +50,37 @@ func (d *dialer) dial() (net.Conn, error) {
 
 	// TODO: support pooling of connections (i.e. keep multiple physical connections in flight)
 	if current == nil || idsExhausted {
-		conn, err := d.doDial()
+		var err error
+		current, err = d.startSession()
 		if err != nil {
-			d.mx.Unlock()
 			return nil, err
 		}
-		sessionStart := make([]byte, sessionStartTotalLen)
-		copy(sessionStart, sessionStartBytes)
-		sessionStart[sessionStartHeaderLen] = protocolVersion1
-		sessionStart[sessionStartHeaderLen+1] = byte(d.windowSize)
-		_, writeErr := conn.Write(sessionStart)
-		if writeErr != nil {
-			conn.Close()
-			return nil, writeErr
-		}
-		current = startSession(conn, d.windowSize, d.pool, nil, d.sessionClosed)
-		d.current = current
 	}
 	id := d.id
 	d.id++
 	d.mx.Unlock()
+
 	c, _ := current.getOrCreateStream(id)
 	return c, nil
+}
+
+func (d *dialer) startSession() (*session, error) {
+	conn, err := d.doDial()
+	if err != nil {
+		d.mx.Unlock()
+		return nil, err
+	}
+	sessionStart := make([]byte, sessionStartTotalLen)
+	copy(sessionStart, sessionStartBytes)
+	sessionStart[sessionStartHeaderLen] = protocolVersion1
+	sessionStart[sessionStartHeaderLen+1] = byte(d.windowSize)
+	_, writeErr := conn.Write(sessionStart)
+	if writeErr != nil {
+		conn.Close()
+		return nil, writeErr
+	}
+	d.current = startSession(conn, d.windowSize, d.pool, nil, d.sessionClosed)
+	return d.current, nil
 }
 
 func (d *dialer) sessionClosed(s *session) {

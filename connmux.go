@@ -125,6 +125,7 @@ var (
 	largeDeadline = time.Now().Add(100000 * time.Hour)
 )
 
+// netError implements the interface net.Error
 type netError struct {
 	err       string
 	timeout   bool
@@ -150,8 +151,9 @@ type BufferPool interface {
 	Put([]byte)
 }
 
-func NewBufferPool(size int) BufferPool {
-	return &bufferPool{bpool.NewBytePool(size, maxFrameLen)}
+// NewBufferPool constructs a BufferPool with the given maximumSize
+func NewBufferPool(maxSize int) BufferPool {
+	return &bufferPool{bpool.NewBytePool(maxSize, maxFrameLen)}
 }
 
 type bufferPool struct {
