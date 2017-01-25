@@ -18,8 +18,8 @@ type listener struct {
 // listener can be used to serve clients that do multiplexing as well as other
 // clients that don't.
 //
-// Note - multiplexed sessions can only be initiated immediately after opening
-//        a connection to the Listener.
+// Multiplexed sessions can only be initiated immediately after opening a
+// connection to the Listener.
 //
 // pool - BufferPool to use
 func WrapListener(wrapped net.Listener, pool BufferPool) net.Listener {
@@ -50,6 +50,8 @@ func (l *listener) Close() error {
 	go func() {
 		l.errCh <- ErrListenerClosed
 	}()
+	// Closing wrapped has the side effect of making the process loop terminate
+	// because it will fail to accept from wrapped.
 	return l.wrapped.Close()
 }
 
