@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-var (
-	defaultDeadline = time.Now().Add(100000 * time.Hour)
-)
-
 type receiveBuffer struct {
 	ackFrame []byte
 	in       chan []byte
@@ -36,14 +32,19 @@ func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth i
 func (buf *receiveBuffer) submit(b []byte) {
 	buf.mx.RLock()
 	closed := buf.closed
+	in := buf.in
 	buf.mx.RUnlock()
 	if closed {
 		return
 	}
-	buf.in <- b
+	in <- b
 }
 
 func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err error) {
+	buf.mx.RLock()
+	in := buf.in
+	buf.mx.RUnlock()
+
 	for {
 		n := copy(b, buf.current)
 		buf.current = buf.current[n:]
@@ -52,14 +53,20 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 			// nothing more to copy
 			return
 		}
-		b = b[n:]
+		if err != nil {
+			return
+		}
+
 		// b can hold more than we had in the current slice, try to read more if
 		// immediately available.
+		b = b[n:]
 		select {
-		case frame, open := <-buf.in:
+		case frame, open := <-in:
 			// Read next frame, continue loop
-			if !open {
-				return totalN, io.EOF
+			if !open && frame == nil {
+				// we've hit the end
+				err = io.EOF
+				return
 			}
 			buf.onFrame(frame)
 			continue
@@ -73,7 +80,7 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 			// We haven't ready anything, wait up till deadline to read
 			now := time.Now()
 			if deadline.IsZero() {
-				deadline = defaultDeadline
+				deadline = largeDeadline
 			} else if deadline.Before(now) {
 				// Deadline already past, don't bother doing anything
 				return
@@ -85,11 +92,13 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 				err = ErrTimeout
 				timer.Stop()
 				return
-			case frame, open := <-buf.in:
+			case frame, open := <-in:
 				// Read next frame, continue loop
 				timer.Stop()
-				if !open {
-					return totalN, io.EOF
+				if !open && frame == nil {
+					// we've hit the end
+					err = io.EOF
+					return
 				}
 				buf.onFrame(frame)
 				continue

@@ -91,8 +91,8 @@ func TestStreamCloseRemoteAfterEcho(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 	b := make([]byte, 4)
-	n, err := conn.Read(b)
-	if !assert.Equal(t, io.EOF, err) {
+	n, err := io.ReadFull(conn, b)
+	if !assert.NoError(t, err) {
 		return
 	}
 	assert.Equal(t, "stop", string(b[:n]))
@@ -194,7 +194,6 @@ func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
 
 	b = make([]byte, len(testdata))
 	n, err = io.ReadFull(conn, b)
-	log.Debug(n)
 	if !assert.NoError(t, err) {
 		return
 	}

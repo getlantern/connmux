@@ -81,6 +81,7 @@ package connmux
 
 import (
 	"encoding/binary"
+	"time"
 
 	"github.com/getlantern/golog"
 	"github.com/oxtoacart/bpool"
@@ -119,6 +120,9 @@ var (
 	sessionStartBytes     = []byte(sessionStart)
 	sessionStartHeaderLen = len(sessionStartBytes)
 	sessionStartTotalLen  = sessionStartHeaderLen + 2
+
+	largeTimeout  = 100000 * time.Hour
+	largeDeadline = time.Now().Add(100000 * time.Hour)
 )
 
 type netError struct {

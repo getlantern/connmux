@@ -53,7 +53,7 @@ func (s *session) readLoop() {
 			if c != nil {
 				// Close, but don't send an RST back the other way since the other end is
 				// already closed.
-				c.close(false, io.EOF, nil)
+				c.close(false, nil, nil)
 			}
 			continue
 		}
