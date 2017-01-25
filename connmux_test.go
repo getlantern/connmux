@@ -34,7 +34,7 @@ func TestWriteSplitting(t *testing.T) {
 		reallyBigData = append(reallyBigData, testdata...)
 	}
 
-	l, dial, wg, err := doEchoServerAndDialer(true)
+	l, dial, wg, err := echoServerAndDialer(0)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -72,7 +72,7 @@ func TestWriteSplitting(t *testing.T) {
 }
 
 func TestStreamCloseRemoteAfterEcho(t *testing.T) {
-	l, dial, wg, err := doEchoServerAndDialer(true)
+	l, dial, wg, err := echoServerAndDialer(0)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -109,7 +109,7 @@ func TestStreamCloseRemoteAfterEcho(t *testing.T) {
 }
 
 func TestPhysicalConnCloseRemotePrematurely(t *testing.T) {
-	l, dial, _, err := doEchoServerAndDialer(true)
+	l, dial, _, err := echoServerAndDialer(0)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -154,7 +154,7 @@ func TestPhysicalConnCloseRemotePrematurely(t *testing.T) {
 }
 
 func TestStreamCloseLocalPrematurely(t *testing.T) {
-	l, dial, _, err := doEchoServerAndDialer(true)
+	l, dial, _, err := echoServerAndDialer(0)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -177,7 +177,7 @@ func TestStreamCloseLocalPrematurely(t *testing.T) {
 }
 
 func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
-	l, dial, _, err := doEchoServerAndDialer(true)
+	l, dial, _, err := echoServerAndDialer(0)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -218,10 +218,9 @@ func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
 	assert.Equal(t, testdata, string(b[:n]))
 }
 
-// Note - to get this test to work in a reasonable amount of time, manually
-// change maxID to a lower value.
-func testConnIDExhaustion(t *testing.T) {
-	l, dial, _, err := doEchoServerAndDialer(true)
+func TestConnIDExhaustion(t *testing.T) {
+	max := 100
+	l, dial, _, err := echoServerAndDialer(uint32(max))
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -232,7 +231,7 @@ func testConnIDExhaustion(t *testing.T) {
 		return
 	}
 
-	for i := 0; i <= maxID; i++ {
+	for i := 0; i <= max; i++ {
 		conn, dialErr := dial()
 		if !assert.NoError(t, dialErr) {
 			return
@@ -252,7 +251,7 @@ func testConnIDExhaustion(t *testing.T) {
 }
 
 func doTestConnBasicFlow(t *testing.T, mux bool) {
-	l, dial, wg, err := doEchoServerAndDialer(mux)
+	l, dial, wg, err := doEchoServerAndDialer(mux, 0)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -286,11 +285,11 @@ func doTestConnBasicFlow(t *testing.T, mux bool) {
 	wg.Wait()
 }
 
-func echoServerAndDialer() (net.Listener, func() (net.Conn, error), *sync.WaitGroup, error) {
-	return doEchoServerAndDialer(true)
+func echoServerAndDialer(maxStreamsPerConn uint32) (net.Listener, func() (net.Conn, error), *sync.WaitGroup, error) {
+	return doEchoServerAndDialer(true, maxStreamsPerConn)
 }
 
-func doEchoServerAndDialer(mux bool) (net.Listener, func() (net.Conn, error), *sync.WaitGroup, error) {
+func doEchoServerAndDialer(mux bool, maxStreamsPerConn uint32) (net.Listener, func() (net.Conn, error), *sync.WaitGroup, error) {
 	wrapped, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		return nil, nil, nil, err
@@ -346,7 +345,7 @@ func doEchoServerAndDialer(mux bool) (net.Listener, func() (net.Conn, error), *s
 	}
 
 	if mux {
-		dialer = Dialer(windowSize, pool, dialer)
+		dialer = Dialer(windowSize, maxStreamsPerConn, pool, dialer)
 	}
 
 	return l, dialer, &wg, nil
@@ -378,7 +377,7 @@ func TestConcurrency(t *testing.T) {
 		}
 	}()
 
-	dial := Dialer(windowSize, NewBufferPool(100), func() (net.Conn, error) {
+	dial := Dialer(windowSize, 0, NewBufferPool(100), func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})
 
@@ -451,7 +450,7 @@ func BenchmarkConnMux(b *testing.B) {
 	}
 	lst := WrapListener(_lst, NewBufferPool(100))
 
-	conn, err := Dialer(25, NewBufferPool(100), func() (net.Conn, error) {
+	conn, err := Dialer(25, 0, NewBufferPool(100), func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})()
 	if err != nil {

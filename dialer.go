@@ -19,30 +19,38 @@ import (
 // takes about 8KB of memory. 25 is a good default, 50 yields higher throughput,
 // more than 50 hasn't been seen to have much of an effect.
 //
+// maxStreamsPerConn - limits the number of streams per physical connection. If
+//                     <=0, defaults to max uint32.
+//
 // pool - BufferPool to use
-func Dialer(windowSize int, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
+func Dialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
+	if maxStreamsPerConn <= 0 || maxStreamsPerConn > maxID {
+		maxStreamsPerConn = maxID
+	}
 	d := &dialer{
-		doDial:     dial,
-		windowSize: windowSize,
-		pool:       pool,
+		doDial:           dial,
+		windowSize:       windowSize,
+		maxStreamPerConn: maxStreamsPerConn,
+		pool:             pool,
 	}
 	return d.dial
 }
 
 type dialer struct {
-	doDial     func() (net.Conn, error)
-	windowSize int
-	pool       BufferPool
-	current    *session
-	id         uint32
-	mx         sync.Mutex
+	doDial           func() (net.Conn, error)
+	windowSize       int
+	maxStreamPerConn uint32
+	pool             BufferPool
+	current          *session
+	id               uint32
+	mx               sync.Mutex
 }
 
 func (d *dialer) dial() (net.Conn, error) {
 	d.mx.Lock()
 	current := d.current
 	idsExhausted := false
-	if d.id > maxID {
+	if d.id > d.maxStreamPerConn {
 		log.Debug("Exhausted maximum allowed IDs on one physical connection, will open new connection")
 		idsExhausted = true
 		d.id = 0
