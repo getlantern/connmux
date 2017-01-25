@@ -39,14 +39,7 @@ func (buf *sendBuffer) sendLoop(out chan []byte) {
 		}
 
 		// drain remaining writes
-		for {
-			select {
-			case <-buf.in:
-				// draining
-			default:
-				// done draining
-				return
-			}
+		for range buf.in {
 		}
 	}()
 
