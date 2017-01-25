@@ -11,12 +11,28 @@ type session struct {
 	net.Conn
 	windowSize  int
 	pool        BufferPool
-	beforeClose func(*session)
 	out         chan []byte
 	streams     map[uint32]*stream
 	closed      map[uint32]bool
 	connCh      chan net.Conn
+	beforeClose func(*session)
 	mx          sync.RWMutex
+}
+
+func startSession(conn net.Conn, windowSize int, pool BufferPool, connCh chan net.Conn, beforeClose func(*session)) *session {
+	s := &session{
+		Conn:        conn,
+		windowSize:  windowSize,
+		pool:        pool,
+		out:         make(chan []byte),
+		streams:     make(map[uint32]*stream),
+		closed:      make(map[uint32]bool),
+		connCh:      connCh,
+		beforeClose: beforeClose,
+	}
+	go s.writeLoop()
+	go s.readLoop()
+	return s
 }
 
 func (s *session) readLoop() {

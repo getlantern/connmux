@@ -60,17 +60,7 @@ func (d *dialer) dial() (net.Conn, error) {
 			conn.Close()
 			return nil, writeErr
 		}
-		current = &session{
-			Conn:        conn,
-			windowSize:  d.windowSize,
-			pool:        d.pool,
-			out:         make(chan []byte),
-			streams:     make(map[uint32]*stream),
-			closed:      make(map[uint32]bool),
-			beforeClose: d.sessionClosed,
-		}
-		go current.writeLoop()
-		go current.readLoop()
+		current = startSession(conn, d.windowSize, d.pool, nil, d.sessionClosed)
 		d.current = current
 	}
 	id := d.id
@@ -83,7 +73,7 @@ func (d *dialer) dial() (net.Conn, error) {
 func (d *dialer) sessionClosed(s *session) {
 	d.mx.Lock()
 	if d.current == s {
-		// Clear current session since it's no longer usable
+		log.Debug("Current session no longer usable, clearing")
 		d.current = nil
 	}
 	d.mx.Unlock()

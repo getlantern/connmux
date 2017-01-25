@@ -76,17 +76,7 @@ func (l *listener) onConn(conn net.Conn) {
 		// It's a multiplexed connection
 		// TODO: check the version
 		windowSize := int(b[sessionStartTotalLen-1])
-		s := &session{
-			Conn:       conn,
-			windowSize: windowSize,
-			pool:       l.pool,
-			out:        make(chan []byte),
-			streams:    make(map[uint32]*stream),
-			closed:     make(map[uint32]bool),
-			connCh:     l.connCh,
-		}
-		go s.readLoop()
-		go s.writeLoop()
+		startSession(conn, windowSize, l.pool, l.connCh, nil)
 		return
 	}
 
