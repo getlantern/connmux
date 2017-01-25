@@ -6,10 +6,15 @@ import (
 	"time"
 )
 
-// receiveBuffer is a buffer for receiving data. It queues up available frames
-// in a channel and makes sure that those are read in order when filling client
+// receiveBuffer buffers incoming frames. It queues up available frames in a
+// channel and makes sure that those are read in order when filling reader's
 // buffers via the read() method. It also makes sure to send an ack whenever a
 // queued frame has been fully read.
+//
+// In order to bound memory usage, the channel holds only <windowSize> frames,
+// after which it starts back-pressuring. The sender knows not to send more
+// than <windowSize> frames so as to prevent this. Once the sender receives an
+// ACK from the receiver, it sends a subsequent frame and so on.
 type receiveBuffer struct {
 	ackFrame []byte
 	in       chan []byte
@@ -21,7 +26,7 @@ type receiveBuffer struct {
 	mx       sync.RWMutex
 }
 
-func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth int) *receiveBuffer {
+func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, windowSize int) *receiveBuffer {
 	// Make an ackFrame for this stream id
 	ackFrame := make([]byte, len(streamID))
 	copy(ackFrame, streamID)
@@ -29,7 +34,7 @@ func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth i
 
 	return &receiveBuffer{
 		ackFrame: ackFrame,
-		in:       make(chan []byte, depth),
+		in:       make(chan []byte, windowSize),
 		ack:      ack,
 		pool:     pool,
 	}

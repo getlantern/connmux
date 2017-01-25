@@ -8,6 +8,16 @@ var (
 	closeTimeout = 30 * time.Second
 )
 
+// sendBuffer buffers outgoing frames. It holds up to <windowSize> frames,
+// after which it starts back-pressuring.
+//
+// It sends an initial <windowSize> frames. After that, in order to avoid
+// filling the receiver's receiveBuffer, it waits for ACKs from the receiver
+// before sending new frames.
+//
+// When closed normally it sends an RST frame to the receiver to indicate that
+// the connection is closed. We handle this from sendBuffer so that we can
+// ensure buffered frames are sent before sending the RST.
 type sendBuffer struct {
 	streamID       []byte
 	in             chan []byte
@@ -15,15 +25,15 @@ type sendBuffer struct {
 	closeRequested chan bool
 }
 
-func newSendBuffer(streamID []byte, out chan []byte, depth int) *sendBuffer {
+func newSendBuffer(streamID []byte, out chan []byte, windowSize int) *sendBuffer {
 	buf := &sendBuffer{
 		streamID:       streamID,
-		in:             make(chan []byte, depth),
-		ack:            make(chan bool, depth),
+		in:             make(chan []byte, windowSize),
+		ack:            make(chan bool, windowSize),
 		closeRequested: make(chan bool, 1),
 	}
-	// Write initial acks to send up to depth right away
-	for i := 0; i < depth; i++ {
+	// Write initial acks to send up to windowSize right away
+	for i := 0; i < windowSize; i++ {
 		buf.ack <- true
 	}
 	go buf.sendLoop(out)
@@ -44,6 +54,10 @@ func (buf *sendBuffer) sendLoop(out chan []byte) {
 	}()
 
 	closeTimer := time.NewTimer(largeTimeout)
+	signalClose := func() {
+		close(buf.in)
+		closeTimer.Reset(closeTimeout)
+	}
 
 	// Send one frame for every ack
 	for {
@@ -52,22 +66,19 @@ func (buf *sendBuffer) sendLoop(out chan []byte) {
 			// Grab next frame
 			select {
 			case frame, open := <-buf.in:
-				if open || frame != nil {
+				if frame != nil {
 					out <- append(frame, buf.streamID...)
 				}
 				if !open {
-					// we've closed
+					// We've closed
 					return
 				}
 			case sendRST = <-buf.closeRequested:
-				// Signal that we're closing
-				close(buf.in)
-				closeTimer.Reset(closeTimeout)
+				signalClose()
 			}
 		case sendRST = <-buf.closeRequested:
 			// Signal that we're closing
-			close(buf.in)
-			closeTimer.Reset(closeTimeout)
+			signalClose()
 		case <-closeTimer.C:
 			// We had queued writes, but we haven't gotten any acks within
 			// closeTimeout of closing, don't wait any longer
@@ -86,7 +97,7 @@ func (buf *sendBuffer) close(sendRST bool) {
 }
 
 func (buf *sendBuffer) sendRST(out chan []byte) {
-	// send just the streamID to indicate we've closed the connection
+	// Send an RST frame with the streamID
 	rst := make([]byte, len(buf.streamID))
 	copy(rst, buf.streamID)
 	setFrameType(rst, frameTypeRST)
