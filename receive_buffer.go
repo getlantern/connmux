@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// receiveBuffer is a buffer for receiving data. It queues up available frames
+// in a channel and makes sure that those are read in order when filling client
+// buffers via the read() method. It also makes sure to send an ack whenever a
+// queued frame has been fully read.
 type receiveBuffer struct {
 	ackFrame []byte
 	in       chan []byte
@@ -18,9 +22,11 @@ type receiveBuffer struct {
 }
 
 func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth int) *receiveBuffer {
+	// Make an ackFrame for this stream id
 	ackFrame := make([]byte, len(streamID))
 	copy(ackFrame, streamID)
 	setFrameType(ackFrame, frameTypeACK)
+
 	return &receiveBuffer{
 		ackFrame: ackFrame,
 		in:       make(chan []byte, depth),
@@ -29,17 +35,25 @@ func newReceiveBuffer(streamID []byte, ack chan []byte, pool BufferPool, depth i
 	}
 }
 
-func (buf *receiveBuffer) submit(b []byte) {
+// submit allows the session to submit a new frame to the receiveBuffer. If the
+// receiveBuffer has been closed, this is a noop.
+func (buf *receiveBuffer) submit(frame []byte) {
 	buf.mx.RLock()
 	closed := buf.closed
 	if closed {
 		buf.mx.RUnlock()
 		return
 	}
-	buf.in <- b
+	buf.in <- frame
 	buf.mx.RUnlock()
 }
 
+// reads available data into the given buffer. If no data is queued, read will
+// wait up to deadline to receive some data. If deadline is Zero, read will wait
+// indefinitely for new data.
+//
+// As long as some data was already queued, read will not wait for more data
+// even if b has not yet been filled.
 func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err error) {
 	for {
 		n := copy(b, buf.current)
@@ -47,9 +61,6 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 		totalN += n
 		if n == len(b) {
 			// nothing more to copy
-			return
-		}
-		if err != nil {
 			return
 		}
 
@@ -69,13 +80,15 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 		default:
 			// nothing immediately available
 			if totalN > 0 {
-				// we're read something, return what we have
+				// we've read something, return what we have
 				return
 			}
 
 			// We haven't ready anything, wait up till deadline to read
 			now := time.Now()
 			if deadline.IsZero() {
+				// Default deadline to something really large so that we effectively
+				// don't time out.
 				deadline = largeDeadline
 			} else if deadline.Before(now) {
 				// Deadline already past, don't bother doing anything
@@ -110,6 +123,7 @@ func (buf *receiveBuffer) onFrame(frame []byte) {
 	}
 	buf.poolable = frame
 	buf.current = frame[frameHeaderLen:]
+	// immediately acknowledge that we've queued a frame
 	buf.ack <- buf.ackFrame
 }
 
