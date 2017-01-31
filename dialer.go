@@ -5,8 +5,17 @@ import (
 	"sync"
 )
 
-// Dialer wraps the given dial function with support for multiplexing. The
-// returned "streams" look and act just like regular net.Conns. The Dialer
+// Dialer is like StreamDialer but provides a function that returns a net.Conn
+// for easier integration with code that needs this interface.
+func Dialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
+	d := StreamDialer(windowSize, maxStreamsPerConn, pool, dial)
+	return func() (net.Conn, error) {
+		return d()
+	}
+}
+
+// StreamDialer wraps the given dial function with support for multiplexing. The
+// returned Streams look and act just like regular net.Conns. The Dialer
 // will multiplex everything over a single net.Conn until it encounters a read
 // or write error on that Conn. At that point, it will dial a new conn for
 // future streams, until there's a problem with that Conn, and so on and so
@@ -23,7 +32,7 @@ import (
 //                     <=0, defaults to max uint32.
 //
 // pool - BufferPool to use
-func Dialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
+func StreamDialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func() (net.Conn, error)) func() (Stream, error) {
 	if maxStreamsPerConn <= 0 || maxStreamsPerConn > maxID {
 		maxStreamsPerConn = maxID
 	}
@@ -46,7 +55,7 @@ type dialer struct {
 	mx               sync.Mutex
 }
 
-func (d *dialer) dial() (net.Conn, error) {
+func (d *dialer) dial() (Stream, error) {
 	d.mx.Lock()
 	current := d.current
 	idsExhausted := false

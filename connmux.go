@@ -81,6 +81,7 @@ package connmux
 
 import (
 	"encoding/binary"
+	"net"
 	"time"
 
 	"github.com/getlantern/golog"
@@ -135,6 +136,22 @@ type netError struct {
 func (e *netError) Error() string   { return e.err }
 func (e *netError) Timeout() bool   { return e.timeout }
 func (e *netError) Temporary() bool { return e.temporary }
+
+// Session is a wrapper around a net.Conn that supports multiplexing.
+type Session interface {
+	net.Conn
+
+	// Wrapped() exposes access to the net.Conn that's wrapped by this Session.
+	Wrapped() net.Conn
+}
+
+// Stream is a net.Conn that also exposes access to the underlying Session
+type Stream interface {
+	net.Conn
+
+	// Session() exposes access to the Session on which this Stream is running.
+	Session() Session
+}
 
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {

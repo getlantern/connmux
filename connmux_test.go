@@ -188,7 +188,7 @@ func TestPhysicalConnCloseLocalPrematurely(t *testing.T) {
 		return
 	}
 	// Close physical connection immediately
-	conn.(*stream).session.Close()
+	conn.(Stream).Session().Close()
 	time.Sleep(50 * time.Millisecond)
 
 	_, err = conn.Write([]byte("stop"))
@@ -321,7 +321,7 @@ func doEchoServerAndDialer(mux bool, maxStreamsPerConn uint32) (net.Listener, fu
 					}
 					if string(b) == "kill" {
 						// Interrupt the underlying connection to see what happens
-						conn.(*stream).session.Close()
+						conn.(Stream).Session().Close()
 						return
 					}
 					_, writeErr := conn.Write(b[:n])

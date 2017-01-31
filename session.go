@@ -216,4 +216,8 @@ func (s *session) Close() error {
 	return s.Conn.Close()
 }
 
+func (s *session) Wrapped() net.Conn {
+	return s.Conn
+}
+
 // TODO: do we need a way to close a session/physical connection intentionally?

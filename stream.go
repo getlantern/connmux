@@ -149,3 +149,7 @@ func (c *stream) SetWriteDeadline(t time.Time) error {
 	c.mx.Unlock()
 	return nil
 }
+
+func (c *stream) Session() Session {
+	return c.session
+}
