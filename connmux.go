@@ -151,6 +151,10 @@ type Stream interface {
 
 	// Session() exposes access to the Session on which this Stream is running.
 	Session() Session
+
+	// Wrapped() exposes the wrapped connection (same thing as Session(), but
+	// implements netx.WrappedConn interface)
+	Wrapped() net.Conn
 }
 
 // BufferPool is a pool of reusable buffers

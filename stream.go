@@ -153,3 +153,7 @@ func (c *stream) SetWriteDeadline(t time.Time) error {
 func (c *stream) Session() Session {
 	return c.session
 }
+
+func (c *stream) Wrapped() net.Conn {
+	return c.Session()
+}
