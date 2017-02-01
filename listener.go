@@ -110,3 +110,8 @@ func (prc *preReadConn) Read(b []byte) (int, error) {
 	}
 	return n, err
 }
+
+// Wrapped implements the interface netx.WrappedConn
+func (prc *preReadConn) Wrapped() net.Conn {
+	return prc.Conn
+}
