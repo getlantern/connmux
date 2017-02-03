@@ -17,8 +17,7 @@ type session struct {
 	pool             BufferPool
 	serverPublicKey  *rsa.PublicKey  // only populated for client connections
 	serverPrivateKey *rsa.PrivateKey // only populated for server connections
-	encrypt          cipher.Stream
-	decrypt          cipher.Stream
+	cipher           cipher.Stream
 	out              chan []byte
 	streams          map[uint32]*stream
 	closed           map[uint32]bool
@@ -31,16 +30,18 @@ type session struct {
 // windowSize and pool. If connCh is provided, the session will notify of new
 // streams as they are opened. If beforeClose is provided, the session will use
 // it to notify when it's about to close.
-func startSession(conn net.Conn, windowSize int, pool BufferPool, connCh chan net.Conn, beforeClose func(*session)) *session {
+func startSession(conn net.Conn, windowSize int, pool BufferPool, serverPublicKey *rsa.PublicKey, serverPrivateKey *rsa.PrivateKey, connCh chan net.Conn, beforeClose func(*session)) *session {
 	s := &session{
-		Conn:        conn,
-		windowSize:  windowSize,
-		pool:        pool,
-		out:         make(chan []byte),
-		streams:     make(map[uint32]*stream),
-		closed:      make(map[uint32]bool),
-		connCh:      connCh,
-		beforeClose: beforeClose,
+		Conn:             conn,
+		windowSize:       windowSize,
+		pool:             pool,
+		serverPublicKey:  serverPublicKey,
+		serverPrivateKey: serverPrivateKey,
+		out:              make(chan []byte),
+		streams:          make(map[uint32]*stream),
+		closed:           make(map[uint32]bool),
+		connCh:           connCh,
+		beforeClose:      beforeClose,
 	}
 	go s.sendLoop()
 	go s.recvLoop()

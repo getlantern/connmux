@@ -8,7 +8,43 @@ import (
 	"testing"
 
 	"github.com/codahale/blake2"
+	"github.com/getlantern/keyman"
+	"github.com/stretchr/testify/assert"
 )
+
+func TestInitCrypto(t *testing.T) {
+	pk, err := keyman.GeneratePK(2048)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	s := &session{
+		windowSize:      5,
+		serverPublicKey: &pk.RSA().PublicKey,
+	}
+
+	secret, err := s.newAESSecret()
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	iv, err := s.newIV()
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	err = s.initAESCipher(secret, iv)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	msg, err := s.buildInitCryptoMsg(secret, iv)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	log.Debug(len(msg))
+}
 
 func BenchmarkHMACMD5(b *testing.B) {
 	secret := make([]byte, 16)

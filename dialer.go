@@ -1,14 +1,15 @@
 package connmux
 
 import (
+	"crypto/rsa"
 	"net"
 	"sync"
 )
 
 // Dialer is like StreamDialer but provides a function that returns a net.Conn
 // for easier integration with code that needs this interface.
-func Dialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func() (net.Conn, error)) func() (net.Conn, error) {
-	d := StreamDialer(windowSize, maxStreamsPerConn, pool, dial)
+func Dialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, serverPublicKey *rsa.PublicKey, dial func() (net.Conn, error)) func() (net.Conn, error) {
+	d := StreamDialer(windowSize, maxStreamsPerConn, pool, serverPublicKey, dial)
 	return func() (net.Conn, error) {
 		return d()
 	}
@@ -32,7 +33,11 @@ func Dialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func
 //                     <=0, defaults to max uint32.
 //
 // pool - BufferPool to use
-func StreamDialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dial func() (net.Conn, error)) func() (Stream, error) {
+//
+// serverPublicKey - if provided, this dialer will use encryption.
+//
+// dial - function to open an underlying connection.
+func StreamDialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, serverPublicKey *rsa.PublicKey, dial func() (net.Conn, error)) func() (Stream, error) {
 	if maxStreamsPerConn <= 0 || maxStreamsPerConn > maxID {
 		maxStreamsPerConn = maxID
 	}
@@ -41,6 +46,7 @@ func StreamDialer(windowSize int, maxStreamsPerConn uint32, pool BufferPool, dia
 		windowSize:       windowSize,
 		maxStreamPerConn: maxStreamsPerConn,
 		pool:             pool,
+		serverPublicKey:  serverPublicKey,
 	}
 	return d.dial
 }
@@ -50,6 +56,7 @@ type dialer struct {
 	windowSize       int
 	maxStreamPerConn uint32
 	pool             BufferPool
+	serverPublicKey  *rsa.PublicKey
 	current          *session
 	id               uint32
 	mx               sync.Mutex
@@ -96,7 +103,7 @@ func (d *dialer) startSession() (*session, error) {
 		conn.Close()
 		return nil, writeErr
 	}
-	d.current = startSession(conn, d.windowSize, d.pool, nil, d.sessionClosed)
+	d.current = startSession(conn, d.windowSize, d.pool, d.serverPublicKey, nil, nil, d.sessionClosed)
 	return d.current, nil
 }
 

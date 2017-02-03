@@ -296,7 +296,7 @@ func doEchoServerAndDialer(mux bool, maxStreamsPerConn uint32) (net.Listener, fu
 	}
 
 	pool := NewBufferPool(100)
-	l := WrapListener(wrapped, pool)
+	l := WrapListener(wrapped, pool, nil)
 
 	var wg sync.WaitGroup
 	go func() {
@@ -345,7 +345,7 @@ func doEchoServerAndDialer(mux bool, maxStreamsPerConn uint32) (net.Listener, fu
 	}
 
 	if mux {
-		dialer = Dialer(windowSize, maxStreamsPerConn, pool, dialer)
+		dialer = Dialer(windowSize, maxStreamsPerConn, pool, nil, dialer)
 	}
 
 	return l, dialer, &wg, nil
@@ -359,7 +359,7 @@ func TestConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to listen: %v", err)
 	}
-	lst := WrapListener(_lst, pool)
+	lst := WrapListener(_lst, pool, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
@@ -377,7 +377,7 @@ func TestConcurrency(t *testing.T) {
 		}
 	}()
 
-	dial := Dialer(windowSize, 0, NewBufferPool(100), func() (net.Conn, error) {
+	dial := Dialer(windowSize, 0, NewBufferPool(100), nil, func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})
 
@@ -405,7 +405,6 @@ func TestConcurrency(t *testing.T) {
 				break
 			}
 		}
-
 	}
 
 	for _, conn := range conns {
@@ -448,9 +447,9 @@ func BenchmarkConnMux(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	lst := WrapListener(_lst, NewBufferPool(100))
+	lst := WrapListener(_lst, NewBufferPool(100), nil)
 
-	conn, err := Dialer(25, 0, NewBufferPool(100), func() (net.Conn, error) {
+	conn, err := Dialer(25, 0, NewBufferPool(100), nil, func() (net.Conn, error) {
 		return net.Dial("tcp", lst.Addr().String())
 	})()
 	if err != nil {

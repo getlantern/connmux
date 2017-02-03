@@ -1,15 +1,17 @@
 package connmux
 
 import (
+	"crypto/rsa"
 	"io"
 	"net"
 )
 
 type listener struct {
-	wrapped net.Listener
-	pool    BufferPool
-	errCh   chan error
-	connCh  chan net.Conn
+	wrapped          net.Listener
+	pool             BufferPool
+	serverPrivateKey *rsa.PrivateKey
+	errCh            chan error
+	connCh           chan net.Conn
 }
 
 // WrapListener wraps the given listener with support for multiplexing. Only
@@ -21,13 +23,19 @@ type listener struct {
 // Multiplexed sessions can only be initiated immediately after opening a
 // connection to the Listener.
 //
+// wrapped - the net.Listener to wrap
+//
 // pool - BufferPool to use
-func WrapListener(wrapped net.Listener, pool BufferPool) net.Listener {
+//
+// serverPrivateKey - if provided, this listener will expect connections to use
+//                    encryption
+func WrapListener(wrapped net.Listener, pool BufferPool, serverPrivateKey *rsa.PrivateKey) net.Listener {
 	l := &listener{
-		wrapped: wrapped,
-		pool:    pool,
-		connCh:  make(chan net.Conn),
-		errCh:   make(chan error),
+		wrapped:          wrapped,
+		pool:             pool,
+		serverPrivateKey: serverPrivateKey,
+		connCh:           make(chan net.Conn),
+		errCh:            make(chan error),
 	}
 	go l.process()
 	return l
@@ -78,7 +86,7 @@ func (l *listener) onConn(conn net.Conn) {
 		// It's a multiplexed connection
 		// TODO: check the version
 		windowSize := int(b[sessionStartTotalLen-1])
-		startSession(conn, windowSize, l.pool, l.connCh, nil)
+		startSession(conn, windowSize, l.pool, nil, l.serverPrivateKey, l.connCh, nil)
 		return
 	}
 

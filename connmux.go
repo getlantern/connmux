@@ -47,24 +47,42 @@
 //      client <-- frame <-- server
 //      ... etc ...
 //
-// Wire format:
+// Framing:
 //
 //   - all integers are unsigned BigEndian
-//   - maximum length is 8,264
 //
-//   +------------+-----------+---------+----------+------+--------+
-//   | Frame Type | Stream ID | MAC Len | Data Len |  MAC |  Data  |
-//   +------------+-----------+---------+----------+------+--------+
-//   |     1      |     3     |    1    |     3    | <=64 | <=8192 |
-//   +------------+-----------+---------+----------+------+--------+
+//   +--------------+-----------+----------+
+//   | Message Type | Stream ID |  Message |
+//   +--------------+-----------+----------+
+//   |       1      |     3     | variable |
+//   +-------------+-----------+----------+
 //
-//   Frame Type - 1 byte, indicates the frame type.
-//  		0 = data frame
-//      1 = init crypto
-//      2 = ack
-//	  	3 = rst (close connection)
+//   Message Type - 1 byte, indicates the message type.
+//  		0 = data
+//      1 = init
+//      2 = init crypto
+//      3 = ack
+//	  	4 = rst (close connection)
 //
 //   Stream ID - unique identifier for stream. (last field for ack and rst)
+//
+// ack message
+//
+//  - no additional message
+//
+// rst message
+//
+//  - no additional message
+//
+// data message
+//
+//   - maximum 8,264 bytes
+//
+//   +---------+----------+------+--------+
+//   | MAC Len | Data Len |  MAC |  Data  |
+//   +---------+----------+------+--------+
+//   |    1    |     3    | <=64 | <=8192 |
+//   +---------+----------+------+--------+
 //
 //   MAC Len - random length of MAC, only relevant if encrypting, else 0. The
 //             actual length of the MAC is adjusted upward by a factor that's
@@ -76,18 +94,43 @@
 //
 //   Data - variable length data
 //
-// Init Crypto Message:
+// init message:
 //
-//   To initialize crypto, the client encrypts handshake information using the
-//   server's RSA public key. The handshake information is:
+//   - 1 byte
 //
-//   +--------------+--------+----------------------------+--------------+
-//   | Random Bytes | Secret | Initialization Vector (IV) | MAC Base Len |
-//   +--------------+--------+----------------------------+--------------+
-//   |    <= 32     |   16   |            16              |      1       |
-//   +--------------+--------+----------------------------+--------------+
+//   +-----+
+//   | Win |
+//   +-----+
+//   |  1  |
+//   +-----+
 //
-//   Random Bytes - some random bytes to vary the size of the message
+//   Win - transmit window size
+//
+// init crypto message:
+//
+//   - max 289 bytes
+//
+//   To initialize an encrypted session, the client sends the following:
+//
+//   +----------+------+----------+
+//   | Rand Len | Rand | Init Msg |
+//   +----------+------+----------+
+//   |     1    | <=32 |    256   |
+//   +----------+------+----------+
+//
+//   Rand Len - length of random bytes
+//
+//   Rand - some random bytes to vary the size of the message
+//
+//   Init Msg - the below, encrypted using RSA OAEP using the server's public key
+//
+//   +-----+--------+------+--------------+
+//   | Win | Secret | (IV) | MAC Base Len |
+//   +-----+--------+------+--------------+
+//   |  1  |   16   |  16  |       1      |
+//   +-----+--------+------+--------------+
+//
+//   Win - transmit window size
 //
 //   Secret - 128 bits of secret for AES128
 //
@@ -95,6 +138,7 @@
 //
 //   MAC Base Len - Random integer between 0 and 32, used as a baseline for the
 //   per-message MAC Len.
+//
 package connmux
 
 import (
@@ -112,19 +156,21 @@ const (
 	// framing
 	idLen          = 4
 	lenLen         = 4
+	winLen         = 1
 	frameHeaderLen = idLen + lenLen
 	maxMacLen      = 64
-	maxIVLen       = 64
 
 	// MaxDataLen is the maximum length of data in a connmux frame.
 	MaxDataLen = 8192
 
-	maxFrameLen = frameHeaderLen + maxMacLen + maxIVLen + MaxDataLen
+	maxFrameLen = frameHeaderLen + maxMacLen + MaxDataLen
 
 	// frame types
-	frameTypeData = 0
-	frameTypeACK  = 1
-	frameTypeRST  = 2
+	frameTypeData       = 0
+	frameTypeInit       = 1
+	frameTypeInitCrypto = 2
+	frameTypeACK        = 3
+	frameTypeRST        = 4
 
 	protocolVersion1 = 1
 
