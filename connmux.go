@@ -49,34 +49,52 @@
 //
 // Wire format:
 //
-//   start of session, 11 bytes
+//   - all integers are unsigned BigEndian
+//   - maximum length is 8,264
 //
-//     \0cmstart\0<version><window>
+//   +------------+-----------+---------+----------+------+--------+
+//   | Frame Type | Stream ID | MAC Len | Data Len |  MAC |  Data  |
+//   +------------+-----------+---------+----------+------+--------+
+//   |     1      |     3     |    1    |     3    | <=64 | <=8192 |
+//   +------------+-----------+---------+----------+------+--------+
 //
-//       \0cmstart\0 - hardcoded sequence beginning and ending with \0 (NUL)
-//                     byte that indicates beginning of session
+//   Frame Type - 1 byte, indicates the frame type.
+//  		0 = data frame
+//      1 = init crypto
+//      2 = ack
+//	  	3 = rst (close connection)
 //
-//       version     - 1 byte, the version of the protocol (currently 1)
+//   Stream ID - unique identifier for stream. (last field for ack and rst)
 //
-//       window      - 1 byte, the size of the transmit window, expressed in
-//                     # of frames
+//   MAC Len - random length of MAC, only relevant if encrypting, else 0. The
+//             actual length of the MAC is adjusted upward by a factor that's
+//             determined uniquely for each session during the handshake.
 //
+//   Data Len - length of Data section
 //
-//   data and control frames (positional, not delimited), maximum 8198 bytes
+//   MAC - message authentication code, only used if encrypting.
 //
-//     <T><SID><DLEN>[<DATA>]
+//   Data - variable length data
 //
-//       T (frame type)     - 1 byte, indicates the frame type.
-//                                0 = data frame
-//                                1 = ack
-//                                2 = rst (close connection)
+// Init Crypto Message:
 //
-//       SID (stream id)    - 3 bytes, unique identifier for stream.
-//                                (last field for non-data messages)
+//   To initialize crypto, the client encrypts handshake information using the
+//   server's RSA public key. The handshake information is:
 //
-//       DLEN (data length) - 2 bytes, length of data section
+//   +--------------+--------+----------------------------+--------------+
+//   | Random Bytes | Secret | Initialization Vector (IV) | MAC Base Len |
+//   +--------------+--------+----------------------------+--------------+
+//   |    <= 32     |   16   |            16              |      1       |
+//   +--------------+--------+----------------------------+--------------+
 //
-//       DATA               - Up to 8192 bytes, the data being transmitted
+//   Random Bytes - some random bytes to vary the size of the message
+//
+//   Secret - 128 bits of secret for AES128
+//
+//   IV - 128 bits of initialization vector for CTR mode on AES128
+//
+//   MAC Base Len - Random integer between 0 and 32, used as a baseline for the
+//   per-message MAC Len.
 package connmux
 
 import (
@@ -93,10 +111,15 @@ const (
 
 	// framing
 	idLen          = 4
-	lenLen         = 2
+	lenLen         = 4
 	frameHeaderLen = idLen + lenLen
-	MaxDataLen     = 8192
-	maxFrameLen    = frameHeaderLen + MaxDataLen
+	maxMacLen      = 64
+	maxIVLen       = 64
+
+	// MaxDataLen is the maximum length of data in a connmux frame.
+	MaxDataLen = 8192
+
+	maxFrameLen = frameHeaderLen + maxMacLen + maxIVLen + MaxDataLen
 
 	// frame types
 	frameTypeData = 0
@@ -160,11 +183,11 @@ type Stream interface {
 // BufferPool is a pool of reusable buffers
 type BufferPool interface {
 	// getForFrame gets a complete buffer large enough to hold an entire connmux
-	// frame (8198 bytes).
+	// frame
 	getForFrame() []byte
 
 	// Get gets a truncated buffer sized to hold the data portion of a connmux
-	// frame (8192 bytes)
+	// frame
 	Get() []byte
 
 	// Put returns a buffer back to the pool, indicating that it is safe to

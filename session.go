@@ -1,6 +1,8 @@
 package connmux
 
 import (
+	"crypto/cipher"
+	"crypto/rsa"
 	"fmt"
 	"io"
 	"net"
@@ -11,14 +13,18 @@ import (
 // net.Conn.
 type session struct {
 	net.Conn
-	windowSize  int
-	pool        BufferPool
-	out         chan []byte
-	streams     map[uint32]*stream
-	closed      map[uint32]bool
-	connCh      chan net.Conn
-	beforeClose func(*session)
-	mx          sync.RWMutex
+	windowSize       int
+	pool             BufferPool
+	serverPublicKey  *rsa.PublicKey  // only populated for client connections
+	serverPrivateKey *rsa.PrivateKey // only populated for server connections
+	encrypt          cipher.Stream
+	decrypt          cipher.Stream
+	out              chan []byte
+	streams          map[uint32]*stream
+	closed           map[uint32]bool
+	connCh           chan net.Conn
+	beforeClose      func(*session)
+	mx               sync.RWMutex
 }
 
 // startSession starts a session on the given net.Conn using the given transmit
