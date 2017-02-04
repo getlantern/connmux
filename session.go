@@ -114,31 +114,54 @@ func (s *session) recvLoop() {
 }
 
 func (s *session) sendLoop() {
+	maxCoalesce := s.windowSize
+	frames := make([][]byte, maxCoalesce)
+	buffers := make(net.Buffers, maxCoalesce*4)
 	for frame := range s.out {
-		dataLen := len(frame) - idLen
-		if dataLen > MaxDataLen {
-			panic(fmt.Sprintf("Data length of %d exceeds maximum allowed of %d", dataLen, MaxDataLen))
+		// Coalesce pending writes. This helps with performance and blocking
+		// resistence by combining packets.
+		frames = frames[:0]
+		frames = append(frames, frame)
+		for c := 0; c < maxCoalesce; c++ {
+			select {
+			case frame = <-s.out:
+				// pending frame immediately available, add it
+				frames = append(frames, frame)
+			default:
+				// no more frames immediately available, write
+				break
+			}
 		}
-		id := frame[dataLen:]
-		_, err := s.Write(id)
-		if err != nil {
-			s.onSessionError(nil, err)
-			return
+
+		if len(frames) > 1 {
+			log.Debugf("Coalesced %d", len(frames))
 		}
-		if frameType(id) != frameTypeData {
-			// This is a special control message, no data included
-			continue
+
+		buffers = buffers[:0]
+		for _, frame := range frames {
+			dataLen := len(frame) - idLen
+			if dataLen > MaxDataLen {
+				panic(fmt.Sprintf("Data length of %d exceeds maximum allowed of %d", dataLen, MaxDataLen))
+			}
+			id := frame[dataLen:]
+			buffers = append(buffers, id)
+			if frameType(id) != frameTypeData {
+				// control message, no data
+				continue
+			}
+			length := make([]byte, lenLen)
+			binaryEncoding.PutUint16(length, uint16(dataLen))
+			buffers = append(buffers, length)
+			buffers = append(buffers, frame[:dataLen])
 		}
-		length := make([]byte, lenLen)
-		binaryEncoding.PutUint16(length, uint16(dataLen))
-		_, err = s.Write(length)
-		if err != nil {
-			s.onSessionError(nil, err)
-			return
+
+		_, err := buffers.WriteTo(s)
+		// Put frames back in pool
+		for _, frame := range frames {
+			if cap(frame) == maxFrameLen {
+				s.pool.Put(frame[:maxFrameLen])
+			}
 		}
-		_, err = s.Write(frame[:dataLen])
-		// Put frame back in pool
-		s.pool.Put(frame[:maxFrameLen])
 		if err != nil {
 			s.onSessionError(nil, err)
 			return
