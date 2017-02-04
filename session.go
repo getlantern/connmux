@@ -133,10 +133,6 @@ func (s *session) sendLoop() {
 			}
 		}
 
-		if len(frames) > 1 {
-			log.Debugf("Coalesced %d", len(frames))
-		}
-
 		buffers = buffers[:0]
 		for _, frame := range frames {
 			dataLen := len(frame) - idLen
