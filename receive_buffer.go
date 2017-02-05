@@ -97,6 +97,7 @@ func (buf *receiveBuffer) read(b []byte, deadline time.Time) (totalN int, err er
 				deadline = largeDeadline
 			} else if deadline.Before(now) {
 				// Deadline already past, don't bother doing anything
+				err = ErrTimeout
 				return
 			}
 			timer := time.NewTimer(deadline.Sub(now))
