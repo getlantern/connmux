@@ -7,6 +7,10 @@ import (
 	"sync"
 )
 
+const (
+	coalesceThreshold = 1500 // basically this is the practical TCP MTU for anything traversing Ethernet
+)
+
 // session encapsulates the multiplexing of streams onto a single "physical"
 // net.Conn.
 type session struct {
@@ -36,7 +40,7 @@ func startSession(conn net.Conn, windowSize int, pool BufferPool, connCh chan ne
 		connCh:      connCh,
 		beforeClose: beforeClose,
 	}
-	go s.sendLoop()
+	go s.sendLoop(pool)
 	go s.recvLoop()
 	return s
 }
@@ -113,32 +117,52 @@ func (s *session) recvLoop() {
 	}
 }
 
-func (s *session) sendLoop() {
-	for frame := range s.out {
+func (s *session) sendLoop(pool BufferPool) {
+	coalesceBuffer := pool.Get()
+	defer pool.Put(coalesceBuffer)
+
+	bufferFrame := func(frame []byte) {
 		dataLen := len(frame) - idLen
 		if dataLen > MaxDataLen {
 			panic(fmt.Sprintf("Data length of %d exceeds maximum allowed of %d", dataLen, MaxDataLen))
 		}
 		id := frame[dataLen:]
-		_, err := s.Write(id)
-		if err != nil {
-			s.onSessionError(nil, err)
-			return
-		}
+		coalesceBuffer = append(coalesceBuffer, id...)
 		if frameType(id) != frameTypeData {
-			// This is a special control message, no data included
-			continue
+			// control message, no data
+			return
 		}
 		length := make([]byte, lenLen)
 		binaryEncoding.PutUint16(length, uint16(dataLen))
-		_, err = s.Write(length)
-		if err != nil {
-			s.onSessionError(nil, err)
-			return
-		}
-		_, err = s.Write(frame[:dataLen])
+		coalesceBuffer = append(coalesceBuffer, length...)
+		coalesceBuffer = append(coalesceBuffer, frame[:dataLen]...)
 		// Put frame back in pool
 		s.pool.Put(frame[:maxFrameLen])
+	}
+
+	for frame := range s.out {
+		// Coalesce pending writes. This helps with performance and blocking
+		// resistence by combining packets.
+		coalesceBuffer = coalesceBuffer[:0]
+		coalesced := 1
+		bufferFrame(frame)
+	coalesceLoop:
+		for len(coalesceBuffer) < coalesceThreshold {
+			select {
+			case frame = <-s.out:
+				// pending frame immediately available, add it
+				bufferFrame(frame)
+				coalesced++
+			default:
+				// no more frames immediately available
+				break coalesceLoop
+			}
+		}
+
+		if log.IsTraceEnabled() {
+			log.Tracef("Coalesced %d for total of %d", coalesced, len(coalesceBuffer))
+		}
+		_, err := s.Write(coalesceBuffer)
 		if err != nil {
 			s.onSessionError(nil, err)
 			return
