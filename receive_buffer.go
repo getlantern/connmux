@@ -129,7 +129,7 @@ func (buf *receiveBuffer) onFrame(frame []byte) {
 	buf.poolable = frame
 	buf.current = frame[frameHeaderLen:]
 	// immediately acknowledge that we've queued a frame
-	buf.ack <- buf.ackFrame
+	// buf.ack <- buf.ackFrame
 }
 
 func (buf *receiveBuffer) close() {

@@ -33,9 +33,14 @@ func newSendBuffer(streamID []byte, out chan []byte, windowSize int) *sendBuffer
 		closeRequested: make(chan bool, 1),
 	}
 	// Write initial acks to send up to windowSize right away
-	for i := 0; i < windowSize; i++ {
-		buf.ack <- true
-	}
+	// for i := 0; i < windowSize; i++ {
+	// 	buf.ack <- true
+	// }
+	go func() {
+		for {
+			buf.ack <- true
+		}
+	}()
 	go buf.sendLoop(out)
 	return buf
 }
